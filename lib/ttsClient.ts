@@ -15,6 +15,7 @@ type SpeechRequest = {
   text: string;
   voice: string;
   speed: number;
+  apiKey: string;
 };
 
 type ActiveClip = SpeechRequest & {
@@ -94,7 +95,7 @@ export async function downloadTtsMessage(request: SpeechRequest): Promise<void> 
   if (!spoken) return;
   try {
     const key = await makeCacheKey(spoken, request.voice, request.speed);
-    const blob = await getOrCreateAudio(key, spoken, request.voice, request.speed);
+    const blob = await getOrCreateAudio(key, spoken, request.voice, request.speed, request.apiKey);
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -123,7 +124,7 @@ async function startSpeech(request: SpeechRequest, preserveQueue: boolean): Prom
 
   try {
     const key = await makeCacheKey(spoken, request.voice, request.speed);
-    const blob = await getOrCreateAudio(key, spoken, request.voice, request.speed);
+    const blob = await getOrCreateAudio(key, spoken, request.voice, request.speed, request.apiKey);
     if (generation !== requestGeneration) return;
 
     const url = URL.createObjectURL(blob);
@@ -195,6 +196,7 @@ async function getOrCreateAudio(
   text: string,
   voice: string,
   speed: number,
+  apiKey: string,
 ): Promise<Blob> {
   const inMemory = memoryCache.get(key);
   if (inMemory) return inMemory;
@@ -210,7 +212,10 @@ async function getOrCreateAudio(
 
   const response = await fetch("/api/tts", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
     body: JSON.stringify({ text, voice, speed }),
   });
   if (!response.ok) {

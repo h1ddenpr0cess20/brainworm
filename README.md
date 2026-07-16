@@ -6,7 +6,7 @@ Brainworm is a bookish xAI workspace built with Next.js for Vercel. It adapts th
 - **Code** — Grok Build-inspired Plan, Build, and Verify modes; attached source context; xAI code execution; and an optional remote MCP workspace with server-side tool allowlists.
 - **Imagine** — Grok Imagine generation and editing, fast or quality models, supported aspect ratios, 1K/2K output, local image persistence, and downloads.
 
-Wordmark's xAI TTS and Grok Imagine implementations are the behavioral reference for voice playback, cache handling, generation/edit request shapes, and media persistence. Brainworm moves credentials and provider calls behind Next.js server routes.
+Wordmark's xAI TTS and Grok Imagine implementations are the behavioral reference for voice playback, cache handling, generation/edit request shapes, and media persistence. Each reader supplies their own xAI API key; Brainworm sends provider calls through Next.js server routes without storing the key on the server.
 
 ## Run locally
 
@@ -14,22 +14,20 @@ Requires Node.js 22 or newer (`.nvmrc` is included).
 
 ```bash
 npm install
-cp .env.example .env.local
 npm run dev
 ```
 
-Set `XAI_API_KEY` in `.env.local`. The same key powers Responses, TTS, voice discovery, and Imagine. `XAI_MODEL` is optional and defaults to `grok-4.5`.
+Open Settings → Model and enter your xAI API key. The same user-supplied key powers Responses, TTS, voice discovery, and Imagine. It is saved only in that browser. `XAI_MODEL` is an optional server environment variable and defaults to `grok-4.5`.
 
 ## Deploy to Vercel
 
 1. Import the repository into Vercel.
-2. Add `XAI_API_KEY` to the project environment variables.
-3. Add the optional MCP variables from `.env.example` if Code mode should access a remote workspace.
-4. Deploy with the standard Next.js preset.
+2. Add the optional MCP variables from `.env.example` if Code mode should access a remote workspace.
+3. Deploy with the standard Next.js preset.
 
 `vercel.json` pins the install and build commands while each long-running API
-route declares its own function duration. Add secrets through the Vercel project
-settings; do not commit `.env.local`.
+route declares its own function duration. No deployment-wide xAI key is needed;
+each user pays for their own xAI usage through the key they enter in Brainworm.
 
 ## Run with Docker
 
@@ -38,7 +36,6 @@ user. Runtime credentials are not included in the image.
 
 ```bash
 cp .env.example .env.local
-# Add XAI_API_KEY to .env.local, then:
 docker compose up --build
 ```
 
@@ -46,7 +43,7 @@ Open `http://localhost:3000`. The image exposes `/api/health` as its container
 health check. Put a streaming-capable reverse proxy in front of the container
 for a public self-hosted deployment.
 
-No xAI credential is sent to the browser. Chat requests use `store: false`; conversation metadata stays in `localStorage`, generated images use IndexedDB, and synthesized voice clips use the browser Cache API.
+The user's xAI key and conversation metadata stay in that browser's `localStorage`. The key is sent as a bearer credential only to Brainworm's same-origin API routes, which forward it to xAI for that request without persisting it. Chat requests use `store: false`; generated images use IndexedDB, and synthesized voice clips use the browser Cache API.
 
 ## MCP workspace
 

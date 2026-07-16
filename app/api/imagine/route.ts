@@ -1,4 +1,5 @@
 import type { ImagineModel } from "@/lib/types";
+import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -34,8 +35,8 @@ type ImagineRequest = {
 type XaiImageItem = { b64_json?: unknown; url?: unknown; mime_type?: unknown };
 
 export async function POST(request: Request): Promise<Response> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) return Response.json({ error: "XAI_API_KEY is not configured." }, { status: 503 });
+  const apiKey = readXaiApiKey(request);
+  if (!apiKey) return missingXaiApiKeyResponse();
 
   let body: ImagineRequest;
   try {

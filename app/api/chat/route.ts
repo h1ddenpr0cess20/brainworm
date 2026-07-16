@@ -5,6 +5,7 @@ import {
   mcpModeInstruction,
 } from "@/lib/prompt";
 import { parseXaiEvent, splitSseBuffer } from "@/lib/sse";
+import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 import type {
   AppMode,
   CodeSessionMode,
@@ -36,13 +37,8 @@ const MAX_TOTAL_CHARACTERS = 200_000;
 const ALLOWED_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high"]);
 
 export async function POST(request: Request): Promise<Response> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    return Response.json(
-      { error: "Brainworm needs XAI_API_KEY in the Vercel environment." },
-      { status: 503 },
-    );
-  }
+  const apiKey = readXaiApiKey(request);
+  if (!apiKey) return missingXaiApiKeyResponse();
 
   let body: ChatBody;
   try {

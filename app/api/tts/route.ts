@@ -1,4 +1,5 @@
 import { isTtsSpeed } from "@/lib/tts";
+import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -13,10 +14,8 @@ type TtsRequest = {
 const VOICE_ID_PATTERN = /^[a-z0-9_-]{1,128}$/i;
 
 export async function POST(request: Request): Promise<Response> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "XAI_API_KEY is not configured." }, { status: 503 });
-  }
+  const apiKey = readXaiApiKey(request);
+  if (!apiKey) return missingXaiApiKeyResponse();
 
   let body: TtsRequest;
   try {

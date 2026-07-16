@@ -1484,11 +1484,13 @@ export function BrainwormApp() {
                           <span>xAI API key</span>
                           <div>
                             <input
-                              type="password"
+                              type="text"
                               value={xaiApiKey}
                               onChange={(event) => updateXaiApiKey(event.target.value)}
                               placeholder="xai-…"
                               autoComplete="off"
+                              autoCapitalize="none"
+                              autoCorrect="off"
                               spellCheck={false}
                               aria-label="xAI API key"
                             />

@@ -19,7 +19,7 @@ import {
   selectMessageVariant as selectVariant,
   snapshotMessage,
 } from "@/lib/conversations";
-import { loadState, saveState } from "@/lib/storage";
+import { loadState, loadXaiApiKey, saveState, saveXaiApiKey } from "@/lib/storage";
 import {
   base64ToBlob,
   clearImageBlobs,
@@ -52,7 +52,6 @@ import {
 type Panel = "history" | "settings" | null;
 type SettingsTab = "model" | "tools" | "voice" | "workspaces" | "theme" | "data";
 type Health = {
-  configured: boolean;
   model: string;
   mcpConfigured: boolean;
   mcpLabel: string | null;
@@ -203,6 +202,7 @@ export function BrainwormApp() {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([]);
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>(WORDMARK_XAI_VOICES);
+  const [xaiApiKey, setXaiApiKey] = useState("");
   const abortRef = useRef<AbortController | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -211,13 +211,16 @@ export function BrainwormApp() {
   const activeConversation =
     state.conversations.find((item) => item.id === state.activeConversationId) ??
     state.conversations[0];
+  const hasXaiApiKey = Boolean(xaiApiKey.trim());
 
   useEffect(() => {
     let cancelled = false;
     const saved = loadState();
+    const savedApiKey = loadXaiApiKey();
     queueMicrotask(() => {
       if (cancelled) return;
       if (saved) setState(repairPersistedState(saved));
+      setXaiApiKey(savedApiKey);
       setHydrated(true);
     });
     return () => {
@@ -226,8 +229,12 @@ export function BrainwormApp() {
   }, []);
 
   useEffect(() => {
-    if (!health?.configured) return;
-    void fetch("/api/tts/voices", { cache: "no-store" })
+    const apiKey = xaiApiKey.trim();
+    if (!apiKey) return;
+    void fetch("/api/tts/voices", {
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
       .then((response) =>
         response.ok ? (response.json() as Promise<{ voices: TtsVoice[] }>) : null,
       )
@@ -235,7 +242,7 @@ export function BrainwormApp() {
         if (payload?.voices.length) setTtsVoices(payload.voices);
       })
       .catch(() => undefined);
-  }, [health?.configured]);
+  }, [xaiApiKey]);
 
   useEffect(() => {
     if (hydrated) saveState(state);
@@ -251,7 +258,6 @@ export function BrainwormApp() {
       .then(setHealth)
       .catch(() =>
         setHealth({
-          configured: false,
           model: "grok-4.5",
           mcpConfigured: false,
           mcpLabel: null,
@@ -277,6 +283,11 @@ export function BrainwormApp() {
       ...current,
       settings: { ...current.settings, ...patch },
     }));
+  };
+
+  const updateXaiApiKey = (apiKey: string) => {
+    setXaiApiKey(apiKey);
+    saveXaiApiKey(apiKey);
   };
 
   const setAppMode = (appMode: BrainwormSettings["appMode"]) => {
@@ -432,6 +443,11 @@ export function BrainwormApp() {
 
   const regenerateMessage = async (messageId: string) => {
     if (!activeConversation || streamingMessageId || state.settings.appMode === "imagine") return;
+    if (!hasXaiApiKey) {
+      setSettingsTab("model");
+      setPanel("settings");
+      return;
+    }
     const messageIndex = activeConversation.messages.findIndex(
       (message) => message.id === messageId,
     );
@@ -486,7 +502,10 @@ export function BrainwormApp() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${xaiApiKey.trim()}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           messages: requestMessages,
           reasoningEffort: state.settings.reasoningEffort,
@@ -545,6 +564,7 @@ export function BrainwormApp() {
           text: accumulated,
           voice: state.settings.ttsVoice,
           speed: state.settings.ttsSpeed,
+          apiKey: xaiApiKey.trim(),
         });
       }
     } catch {
@@ -584,6 +604,11 @@ export function BrainwormApp() {
 
   const generateImagine = async (prompt: string) => {
     if (!prompt || streamingMessageId || !activeConversation) return;
+    if (!hasXaiApiKey) {
+      setSettingsTab("model");
+      setPanel("settings");
+      return;
+    }
     const now = currentTimestamp();
     const conversationId = activeConversation.id;
     const sourceImage = pendingImage;
@@ -630,7 +655,10 @@ export function BrainwormApp() {
     try {
       const response = await fetch("/api/imagine", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${xaiApiKey.trim()}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           prompt,
           model: state.settings.imagineModel,
@@ -697,6 +725,11 @@ export function BrainwormApp() {
   const sendMessage = async (textOverride?: string) => {
     let text = (textOverride ?? input).trim();
     if (!text || streamingMessageId || !activeConversation) return;
+    if (!hasXaiApiKey) {
+      setSettingsTab("model");
+      setPanel("settings");
+      return;
+    }
 
     if (state.settings.appMode === "imagine") {
       await generateImagine(text);
@@ -790,7 +823,10 @@ export function BrainwormApp() {
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          Authorization: `Bearer ${xaiApiKey.trim()}`,
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify({
           messages: requestMessages,
           reasoningEffort: state.settings.reasoningEffort,
@@ -846,6 +882,7 @@ export function BrainwormApp() {
           text: accumulated,
           voice: state.settings.ttsVoice,
           speed: state.settings.ttsSpeed,
+          apiKey: xaiApiKey.trim(),
         });
       }
     } catch (error) {
@@ -1020,14 +1057,8 @@ export function BrainwormApp() {
                   {health.mcpLabel} MCP
                 </span>
               )}
-            <span className={`connection-dot ${health?.configured ? "is-on" : ""}`} />
-            <span>
-              {health === null
-                ? "Checking den"
-                : health.configured
-                  ? "xAI den ready"
-                  : "Key needed"}
-            </span>
+            <span className={`connection-dot ${hasXaiApiKey ? "is-on" : ""}`} />
+            <span>{hasXaiApiKey ? "xAI den ready" : "Key needed"}</span>
           </div>
         </header>
 
@@ -1046,6 +1077,7 @@ export function BrainwormApp() {
                     enabled: state.settings.ttsEnabled,
                     voice: state.settings.ttsVoice,
                     speed: state.settings.ttsSpeed,
+                    apiKey: xaiApiKey.trim(),
                   }}
                 />
               ))}
@@ -1437,18 +1469,37 @@ export function BrainwormApp() {
                     <>
                       <SettingSection
                         title="Connection"
-                        description="The key stays on your server, never in the reader's browser."
+                        description="Use your own xAI API key. It stays in this browser and is sent only through Brainworm's API routes to xAI."
                       >
                         <div className="connection-card">
-                          <span className={`connection-dot ${health?.configured ? "is-on" : ""}`} />
+                          <span className={`connection-dot ${hasXaiApiKey ? "is-on" : ""}`} />
                           <div>
-                            <b>{health?.configured ? "xAI is connected" : "xAI key not found"}</b>
+                            <b>
+                              {hasXaiApiKey ? "Your xAI key is ready" : "Your xAI key is required"}
+                            </b>
                             <small>{health?.model ?? "grok-4.5"} · Responses API</small>
                           </div>
                         </div>
-                        {!health?.configured && (
-                          <code className="env-hint">XAI_API_KEY=your-key</code>
-                        )}
+                        <label className="api-key-field">
+                          <span>xAI API key</span>
+                          <div>
+                            <input
+                              type="password"
+                              value={xaiApiKey}
+                              onChange={(event) => updateXaiApiKey(event.target.value)}
+                              placeholder="xai-…"
+                              autoComplete="off"
+                              spellCheck={false}
+                              aria-label="xAI API key"
+                            />
+                            {hasXaiApiKey && (
+                              <button type="button" onClick={() => updateXaiApiKey("")}>
+                                Clear
+                              </button>
+                            )}
+                          </div>
+                          <small>Usage is billed to the xAI account that owns this key.</small>
+                        </label>
                       </SettingSection>
 
                       <SettingSection
@@ -1495,7 +1546,7 @@ export function BrainwormApp() {
                           if (!ttsEnabled) stopTtsMessage();
                         }}
                         label="Enable xAI text to speech"
-                        disabled={!health?.configured}
+                        disabled={!hasXaiApiKey}
                       />
                       {state.settings.ttsEnabled && (
                         <div className="voice-settings">
@@ -1547,6 +1598,7 @@ export function BrainwormApp() {
                                   text: "Brainworm reporting from the margins. The roots look interesting down here.",
                                   voice: state.settings.ttsVoice,
                                   speed: state.settings.ttsSpeed,
+                                  apiKey: xaiApiKey.trim(),
                                 })
                               }
                             >

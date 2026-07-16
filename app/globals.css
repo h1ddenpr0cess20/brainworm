@@ -1654,16 +1654,59 @@ a:focus-visible {
   font-size: 8px;
 }
 
-.env-hint {
-  display: block;
+.api-key-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-top: 8px;
-  padding: 9px 10px;
-  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  background: var(--paper-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.api-key-field > div {
+  display: flex;
+  gap: 6px;
+}
+
+.api-key-field input {
+  min-width: 0;
+  flex: 1;
+  height: 35px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  outline: 0;
+  color: var(--ink);
+  background: var(--paper-raised);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+}
+
+.api-key-field input:focus {
+  border-color: var(--accent);
+}
+
+.api-key-field button {
+  padding: 0 10px;
+  border: 1px solid var(--line);
   border-radius: 8px;
   color: var(--clay);
   background: var(--clay-soft);
-  font-family: var(--font-mono);
-  font-size: 9.5px;
+  font-size: 9px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.api-key-field small {
+  color: var(--faint);
+  font-size: 8.5px;
+  font-weight: 500;
+  line-height: 1.45;
 }
 
 .segmented,

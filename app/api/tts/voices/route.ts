@@ -1,4 +1,5 @@
 import type { TtsVoice } from "@/lib/types";
+import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const dynamic = "force-dynamic";
 
@@ -8,11 +9,9 @@ type XaiVoice = {
   description?: unknown;
 };
 
-export async function GET(): Promise<Response> {
-  const apiKey = process.env.XAI_API_KEY;
-  if (!apiKey) {
-    return Response.json({ error: "XAI_API_KEY is not configured." }, { status: 503 });
-  }
+export async function GET(request: Request): Promise<Response> {
+  const apiKey = readXaiApiKey(request);
+  if (!apiKey) return missingXaiApiKeyResponse();
 
   const upstream = await fetch("https://api.x.ai/v1/tts/voices", {
     headers: { Authorization: `Bearer ${apiKey}` },

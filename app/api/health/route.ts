@@ -9,7 +9,6 @@ export function GET(): Response {
   );
   return Response.json(
     {
-      configured: Boolean(process.env.XAI_API_KEY),
       model: process.env.XAI_MODEL || "grok-4.5",
       mcpConfigured: hasMcpEndpoint && hasBuildPolicy,
       mcpLabel: hasMcpEndpoint ? process.env.BRAINWORM_MCP_LABEL : null,

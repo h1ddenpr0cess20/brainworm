@@ -5,7 +5,13 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "json-summary", "html"],
-      include: ["lib/conversations.ts", "lib/prompt.ts", "lib/sse.ts", "lib/tts.ts"],
+      include: [
+        "lib/conversations.ts",
+        "lib/prompt.ts",
+        "lib/sse.ts",
+        "lib/tts.ts",
+        "lib/xaiKey.ts",
+      ],
       thresholds: {
         branches: 75,
         functions: 80,

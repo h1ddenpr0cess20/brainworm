@@ -15,6 +15,7 @@ type ChatMessageProps = {
     enabled: boolean;
     voice: string;
     speed: number;
+    apiKey: string;
   };
   busy?: boolean;
   onRegenerate?: (messageId: string) => void;
@@ -173,6 +174,7 @@ export function ChatMessage({
                 text={message.content}
                 voice={tts.voice}
                 speed={tts.speed}
+                apiKey={tts.apiKey}
               />
             )}
           </div>

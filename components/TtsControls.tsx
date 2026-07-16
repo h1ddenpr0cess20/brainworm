@@ -16,13 +16,14 @@ type TtsControlsProps = {
   text: string;
   voice: string;
   speed: number;
+  apiKey: string;
 };
 
-export function TtsControls({ messageId, text, voice, speed }: TtsControlsProps) {
+export function TtsControls({ messageId, text, voice, speed, apiKey }: TtsControlsProps) {
   const playback = useSyncExternalStore(subscribeTts, getTtsSnapshot, getTtsServerSnapshot);
   const isActive = playback.messageId === messageId;
   const status = isActive ? playback.status : "idle";
-  const request = { messageId, text, voice, speed };
+  const request = { messageId, text, voice, speed, apiKey };
 
   return (
     <div className="tts-controls" aria-label="Read message aloud">

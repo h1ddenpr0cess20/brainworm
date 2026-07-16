@@ -6,6 +6,7 @@ import {
   IMAGINE_AGENT_PROMPT,
 } from "@/lib/imagineAgent";
 import type { ImagineModel, MessageRole, ReasoningEffort } from "@/lib/types";
+import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const runtime = "nodejs";
@@ -132,7 +133,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!agentResponse.ok) {
-    const error = await readError(agentResponse);
+    const error = await readUpstreamErrorMessage(agentResponse);
     return Response.json(
       { error: error || `Grok could not prepare the image request (${agentResponse.status}).` },
       { status: agentResponse.status === 429 ? 429 : 502 },
@@ -174,7 +175,7 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   if (!upstream.ok) {
-    const error = await readError(upstream);
+    const error = await readUpstreamErrorMessage(upstream);
     return Response.json(
       { error: error || `Grok Imagine failed (${upstream.status}).` },
       { status: upstream.status === 429 ? 429 : 502 },
@@ -246,18 +247,5 @@ async function materializeImage(
     };
   } catch {
     return null;
-  }
-}
-
-async function readError(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as {
-      error?: { message?: string } | string;
-      message?: string;
-    };
-    if (typeof payload.error === "string") return payload.error;
-    return payload.error?.message || payload.message || "";
-  } catch {
-    return "";
   }
 }

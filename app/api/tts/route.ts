@@ -1,4 +1,5 @@
 import { isTtsSpeed } from "@/lib/tts";
+import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const runtime = "nodejs";
@@ -63,7 +64,7 @@ export async function POST(request: Request): Promise<Response> {
   });
 
   if (!upstream.ok) {
-    const detail = await readUpstreamError(upstream);
+    const detail = await readUpstreamErrorMessage(upstream);
     return Response.json(
       { error: detail || `xAI speech synthesis failed (${upstream.status}).` },
       { status: upstream.status === 429 ? 429 : 502 },
@@ -78,17 +79,4 @@ export async function POST(request: Request): Promise<Response> {
       "X-Content-Type-Options": "nosniff",
     },
   });
-}
-
-async function readUpstreamError(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as {
-      error?: { message?: string } | string;
-      message?: string;
-    };
-    if (typeof payload.error === "string") return payload.error;
-    return payload.error?.message || payload.message || "";
-  } catch {
-    return "";
-  }
 }

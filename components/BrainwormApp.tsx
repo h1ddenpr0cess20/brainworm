@@ -10,12 +10,12 @@ import type {
   McpServerConfig,
   PersistedState,
   Source,
-  StreamEvent,
   ToolActivity,
   TtsVoice,
 } from "@/lib/types";
 import { makeConversationTitle } from "@/lib/prompt";
 import { parseCodeCommand } from "@/lib/codeCommands";
+import { readStreamEvents } from "@/lib/chatStream";
 import { needsTtsCodeModeConfirmation } from "@/lib/tts";
 import {
   appendMessageVariant,
@@ -159,7 +159,11 @@ function parseCommaList(value: string): string[] {
 
 function mergeTools(current: ToolActivity[] = [], incoming: ToolActivity[]): ToolActivity[] {
   const tools = new Map(current.map((tool) => [tool.id, tool]));
-  for (const tool of incoming) tools.set(tool.id, { ...tools.get(tool.id), ...tool });
+  for (const tool of incoming) {
+    const existing = tools.get(tool.id);
+    // A later event may omit the server label; keep the one already known.
+    tools.set(tool.id, { ...existing, ...tool, server: tool.server ?? existing?.server });
+  }
   return [...tools.values()];
 }
 
@@ -292,8 +296,27 @@ export function BrainwormApp() {
     return () => controller.abort();
   }, [xaiApiKey]);
 
+  // Persisting serializes every conversation, so writing on each streamed
+  // token is too heavy. Debounce writes, guarantee one at least every two
+  // seconds while changes keep arriving, and flush when the page is hidden.
+  const lastSaveRef = useRef(0);
   useEffect(() => {
-    if (hydrated) saveState(state);
+    if (!hydrated) return;
+    const save = () => {
+      lastSaveRef.current = Date.now();
+      saveState(state);
+    };
+    const overdue = Date.now() - lastSaveRef.current >= 2_000;
+    const timer = window.setTimeout(save, overdue ? 0 : 400);
+    const flush = () => {
+      window.clearTimeout(timer);
+      save();
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pagehide", flush);
+    };
   }, [hydrated, state]);
 
   useEffect(() => {
@@ -609,35 +632,23 @@ export function BrainwormApp() {
         throw new Error(payload?.error ?? `The request failed (${response.status}).`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as StreamEvent;
-          if (event.type === "delta") {
-            accumulated += event.delta;
-            patchMessage(conversationId, messageId, { content: accumulated });
-          }
-          if (event.type === "tool") {
-            streamedTools = mergeTools(streamedTools, [event.tool]);
-            patchMessage(conversationId, messageId, {
-              tools: streamedTools,
-            });
-          }
-          if (event.type === "error") throw new Error(event.message);
-          if (event.type === "done") {
-            completed = true;
-            finalSources = event.sources;
-            streamedTools = mergeTools(streamedTools, event.tools);
-            patchMessage(conversationId, messageId, { tools: streamedTools });
-          }
+      for await (const event of readStreamEvents(response.body)) {
+        if (event.type === "delta") {
+          accumulated += event.delta;
+          patchMessage(conversationId, messageId, { content: accumulated });
+        }
+        if (event.type === "tool") {
+          streamedTools = mergeTools(streamedTools, [event.tool]);
+          patchMessage(conversationId, messageId, {
+            tools: streamedTools,
+          });
+        }
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "done") {
+          completed = true;
+          finalSources = event.sources;
+          streamedTools = mergeTools(streamedTools, event.tools);
+          patchMessage(conversationId, messageId, { tools: streamedTools });
         }
       }
       if (!completed) finalSources = [];
@@ -985,40 +996,28 @@ export function BrainwormApp() {
         throw new Error(payload?.error ?? `The request failed (${response.status}).`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       let completed = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as StreamEvent;
-          if (event.type === "delta") {
-            accumulated += event.delta;
-            patchMessage(conversationId, assistantMessage.id, { content: accumulated });
-          }
-          if (event.type === "tool") {
-            streamedTools = mergeTools(streamedTools, [event.tool]);
-            patchMessage(conversationId, assistantMessage.id, {
-              tools: streamedTools,
-            });
-          }
-          if (event.type === "error") throw new Error(event.message);
-          if (event.type === "done") {
-            completed = true;
-            streamedTools = mergeTools(streamedTools, event.tools);
-            patchMessage(conversationId, assistantMessage.id, {
-              status: "complete",
-              sources: event.sources,
-              tools: streamedTools,
-            });
-          }
+      for await (const event of readStreamEvents(response.body)) {
+        if (event.type === "delta") {
+          accumulated += event.delta;
+          patchMessage(conversationId, assistantMessage.id, { content: accumulated });
+        }
+        if (event.type === "tool") {
+          streamedTools = mergeTools(streamedTools, [event.tool]);
+          patchMessage(conversationId, assistantMessage.id, {
+            tools: streamedTools,
+          });
+        }
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "done") {
+          completed = true;
+          streamedTools = mergeTools(streamedTools, event.tools);
+          patchMessage(conversationId, assistantMessage.id, {
+            status: "complete",
+            sources: event.sources,
+            tools: streamedTools,
+          });
         }
       }
 

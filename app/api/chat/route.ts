@@ -5,6 +5,7 @@ import {
   mcpModeInstruction,
 } from "@/lib/prompt";
 import { parseXaiEvent, splitSseBuffer } from "@/lib/sse";
+import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 import type {
   AppMode,
@@ -315,18 +316,7 @@ function validateMessages(value: ChatBody["messages"]): IncomingMessage[] | null
 }
 
 async function safeUpstreamError(upstream: Response): Promise<string> {
-  try {
-    const payload = (await upstream.json()) as {
-      error?: { message?: string } | string;
-      message?: string;
-    };
-    const message =
-      typeof payload.error === "string"
-        ? payload.error
-        : (payload.error?.message ?? payload.message);
-    if (message) return `xAI: ${message}`;
-  } catch {
-    // Fall through to the status-based message.
-  }
+  const message = await readUpstreamErrorMessage(upstream);
+  if (message) return `xAI: ${message}`;
   return `xAI returned ${upstream.status} ${upstream.statusText || "an error"}.`;
 }

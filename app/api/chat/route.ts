@@ -5,6 +5,7 @@ import {
   mcpModeInstruction,
 } from "@/lib/prompt";
 import { parseXaiEvent, splitSseBuffer } from "@/lib/sse";
+import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 import type {
   AppMode,
@@ -225,8 +226,10 @@ export function buildMcpTools(
   if (!Array.isArray(value)) return [];
   const seenLabels = new Set<string>();
   const tools: RemoteMcpTool[] = [];
-  for (const server of value.slice(0, 8)) {
-    if (!server || server.enabled !== true) continue;
+  // Filter before capping so disabled entries cannot crowd enabled ones out
+  // of the eight available slots.
+  const enabled = value.filter((server) => server && server.enabled === true).slice(0, 8);
+  for (const server of enabled) {
     const serverUrl = typeof server.url === "string" ? server.url.trim() : "";
     const rawLabel = typeof server.label === "string" ? server.label.trim() : "";
     const serverLabel = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
@@ -313,18 +316,7 @@ function validateMessages(value: ChatBody["messages"]): IncomingMessage[] | null
 }
 
 async function safeUpstreamError(upstream: Response): Promise<string> {
-  try {
-    const payload = (await upstream.json()) as {
-      error?: { message?: string } | string;
-      message?: string;
-    };
-    const message =
-      typeof payload.error === "string"
-        ? payload.error
-        : (payload.error?.message ?? payload.message);
-    if (message) return `xAI: ${message}`;
-  } catch {
-    // Fall through to the status-based message.
-  }
+  const message = await readUpstreamErrorMessage(upstream);
+  if (message) return `xAI: ${message}`;
   return `xAI returned ${upstream.status} ${upstream.statusText || "an error"}.`;
 }

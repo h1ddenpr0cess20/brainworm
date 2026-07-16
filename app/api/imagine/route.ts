@@ -6,6 +6,7 @@ import {
   IMAGINE_AGENT_PROMPT,
 } from "@/lib/imagineAgent";
 import type { ImagineModel, MessageRole, ReasoningEffort } from "@/lib/types";
+import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const runtime = "nodejs";
@@ -102,26 +103,37 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "Imagine history is not valid." }, { status: 400 });
   }
 
-  const agentResponse = await fetch("https://api.x.ai/v1/responses", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: process.env.XAI_MODEL || "grok-4.5",
-      input: [
-        { role: "system", content: IMAGINE_AGENT_PROMPT },
-        ...messages,
-        { role: "user", content: prompt },
-      ],
-      reasoning: { effort: reasoningEffort },
-      tools: buildImagineAgentTools({ edit: Boolean(sourceImage), webSearch }),
-      include: webSearch ? ["web_search_call.action.sources"] : undefined,
-      store: false,
-    }),
-    cache: "no-store",
-  });
+  let agentResponse: Response;
+  try {
+    agentResponse = await fetch("https://api.x.ai/v1/responses", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: process.env.XAI_MODEL || "grok-4.5",
+        input: [
+          { role: "system", content: IMAGINE_AGENT_PROMPT },
+          ...messages,
+          { role: "user", content: prompt },
+        ],
+        reasoning: { effort: reasoningEffort },
+        tools: buildImagineAgentTools({ edit: Boolean(sourceImage), webSearch }),
+        include: webSearch ? ["web_search_call.action.sources"] : undefined,
+        store: false,
+      }),
+      cache: "no-store",
+      signal: request.signal,
+    });
+  } catch (error) {
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    console.error("xAI imagine agent request failed", error);
+    return Response.json(
+      { error: "Brainworm could not reach the xAI burrow. Please try again." },
+      { status: 502 },
+    );
+  }
 
   if (!agentResponse.ok) {
-    const error = await readError(agentResponse);
+    const error = await readUpstreamErrorMessage(agentResponse);
     return Response.json(
       { error: error || `Grok could not prepare the image request (${agentResponse.status}).` },
       { status: agentResponse.status === 429 ? 429 : 502 },
@@ -144,18 +156,26 @@ export async function POST(request: Request): Promise<Response> {
   };
   if (sourceImage) payload.image = { type: "image_url", url: sourceImage };
 
-  const upstream = await fetch(
-    `https://api.x.ai/v1/images/${sourceImage ? "edits" : "generations"}`,
-    {
+  let upstream: Response;
+  try {
+    upstream = await fetch(`https://api.x.ai/v1/images/${sourceImage ? "edits" : "generations"}`, {
       method: "POST",
       headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify(payload),
       cache: "no-store",
-    },
-  );
+      signal: request.signal,
+    });
+  } catch (error) {
+    if (request.signal.aborted) return new Response(null, { status: 499 });
+    console.error("xAI imagine request failed", error);
+    return Response.json(
+      { error: "Grok Imagine could not be reached. Please try again." },
+      { status: 502 },
+    );
+  }
 
   if (!upstream.ok) {
-    const error = await readError(upstream);
+    const error = await readUpstreamErrorMessage(upstream);
     return Response.json(
       { error: error || `Grok Imagine failed (${upstream.status}).` },
       { status: upstream.status === 429 ? 429 : 502 },
@@ -211,30 +231,21 @@ async function materializeImage(
     };
   }
   if (typeof item.url !== "string" || !item.url.startsWith("https://")) return null;
-  const response = await fetch(item.url, { cache: "no-store" });
-  if (!response.ok) return null;
-  const size = Number(response.headers.get("content-length") || 0);
-  if (size > 20_000_000) return null;
-  const bytes = await response.arrayBuffer();
-  if (bytes.byteLength > 20_000_000) return null;
-  return {
-    b64: Buffer.from(bytes).toString("base64"),
-    mimeType:
-      typeof item.mime_type === "string"
-        ? item.mime_type
-        : response.headers.get("content-type") || "image/jpeg",
-  };
-}
-
-async function readError(response: Response): Promise<string> {
   try {
-    const payload = (await response.json()) as {
-      error?: { message?: string } | string;
-      message?: string;
+    const response = await fetch(item.url, { cache: "no-store" });
+    if (!response.ok) return null;
+    const size = Number(response.headers.get("content-length") || 0);
+    if (size > 20_000_000) return null;
+    const bytes = await response.arrayBuffer();
+    if (bytes.byteLength > 20_000_000) return null;
+    return {
+      b64: Buffer.from(bytes).toString("base64"),
+      mimeType:
+        typeof item.mime_type === "string"
+          ? item.mime_type
+          : response.headers.get("content-type") || "image/jpeg",
     };
-    if (typeof payload.error === "string") return payload.error;
-    return payload.error?.message || payload.message || "";
   } catch {
-    return "";
+    return null;
   }
 }

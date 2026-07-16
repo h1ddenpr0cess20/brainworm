@@ -1,3 +1,4 @@
+import { collectHttpSources } from "./sources";
 import type { Source, ToolActivity } from "./types";
 
 export type SseEvent = {
@@ -69,7 +70,7 @@ export function parseXaiEvent(
     return {
       kind: "complete",
       responseId: payload.response?.id,
-      sources: extractSources(payload.response?.output),
+      sources: collectHttpSources(payload.response?.output),
       tools: extractToolActivities(payload.response?.output),
     };
   }
@@ -126,34 +127,4 @@ function extractToolActivities(output: unknown[] | undefined): ToolActivity[] {
     if (tool) tools.set(tool.id, tool);
   }
   return [...tools.values()];
-}
-
-function extractSources(output: unknown[] | undefined): Source[] {
-  if (!Array.isArray(output)) return [];
-  const sources = new Map<string, Source>();
-
-  const visit = (value: unknown) => {
-    if (!value || typeof value !== "object") return;
-    const record = value as Record<string, unknown>;
-    const url =
-      typeof record.url === "string"
-        ? record.url
-        : typeof record.uri === "string"
-          ? record.uri
-          : null;
-    if (url && /^https?:\/\//.test(url)) {
-      const title =
-        typeof record.title === "string" && record.title.trim()
-          ? record.title.trim()
-          : new URL(url).hostname.replace(/^www\./, "");
-      if (!sources.has(url)) sources.set(url, { title, url });
-    }
-    for (const child of Object.values(record)) {
-      if (Array.isArray(child)) child.forEach(visit);
-      else if (child && typeof child === "object") visit(child);
-    }
-  };
-
-  output.forEach(visit);
-  return [...sources.values()].slice(0, 12);
 }

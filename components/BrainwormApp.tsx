@@ -10,12 +10,12 @@ import type {
   McpServerConfig,
   PersistedState,
   Source,
-  StreamEvent,
   ToolActivity,
   TtsVoice,
 } from "@/lib/types";
 import { makeConversationTitle } from "@/lib/prompt";
 import { parseCodeCommand } from "@/lib/codeCommands";
+import { readStreamEvents } from "@/lib/chatStream";
 import { needsTtsCodeModeConfirmation } from "@/lib/tts";
 import {
   appendMessageVariant,
@@ -162,7 +162,11 @@ function parseCommaList(value: string): string[] {
 
 function mergeTools(current: ToolActivity[] = [], incoming: ToolActivity[]): ToolActivity[] {
   const tools = new Map(current.map((tool) => [tool.id, tool]));
-  for (const tool of incoming) tools.set(tool.id, { ...tools.get(tool.id), ...tool });
+  for (const tool of incoming) {
+    const existing = tools.get(tool.id);
+    // A later event may omit the server label; keep the one already known.
+    tools.set(tool.id, { ...existing, ...tool, server: tool.server ?? existing?.server });
+  }
   return [...tools.values()];
 }
 
@@ -196,12 +200,13 @@ function makeInitialState(): PersistedState {
 }
 
 function repairPersistedState(saved: PersistedState): PersistedState {
+  const savedSettings: Partial<BrainwormSettings> = saved.settings ?? {};
   const conversations = saved.conversations
     .filter((conversation) => conversation && Array.isArray(conversation.messages))
     .map((conversation) => ({
       ...conversation,
       messages: conversation.messages
-        .filter((message) => message.content || message.status !== "streaming")
+        .filter((message) => message && (message.content || message.status !== "streaming"))
         .map((message) =>
           message.status === "streaming" ? { ...message, status: "complete" as const } : message,
         ),
@@ -214,12 +219,12 @@ function repairPersistedState(saved: PersistedState): PersistedState {
     conversations,
     settings: {
       ...DEFAULT_SETTINGS,
-      ...saved.settings,
+      ...savedSettings,
       codeSessionMode:
-        saved.settings.codeSessionMode === "plan" || saved.settings.codeSessionMode === "always"
-          ? saved.settings.codeSessionMode
+        savedSettings.codeSessionMode === "plan" || savedSettings.codeSessionMode === "always"
+          ? savedSettings.codeSessionMode
           : "normal",
-      mcpServers: Array.isArray(saved.settings.mcpServers) ? saved.settings.mcpServers : [],
+      mcpServers: Array.isArray(savedSettings.mcpServers) ? savedSettings.mcpServers : [],
     },
   };
 }
@@ -248,6 +253,12 @@ export function BrainwormApp() {
     state.conversations[0];
   const hasXaiApiKey = Boolean(xaiApiKey.trim());
   const enabledMcpServers = state.settings.mcpServers.filter((server) => server.enabled);
+  // Server configs carry authorization secrets; only Code requests need them,
+  // and disabled servers should never leave the browser.
+  const mcpServersForRequest = () =>
+    state.settings.appMode === "code"
+      ? state.settings.mcpServers.filter((server) => server.enabled)
+      : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -255,7 +266,13 @@ export function BrainwormApp() {
     const savedApiKey = loadXaiApiKey();
     queueMicrotask(() => {
       if (cancelled) return;
-      if (saved) setState(repairPersistedState(saved));
+      if (saved) {
+        try {
+          setState(repairPersistedState(saved));
+        } catch {
+          // A corrupt saved state must not keep the app stuck invisible.
+        }
+      }
       setXaiApiKey(savedApiKey);
       setHydrated(true);
     });
@@ -267,9 +284,11 @@ export function BrainwormApp() {
   useEffect(() => {
     const apiKey = xaiApiKey.trim();
     if (!apiKey) return;
+    const controller = new AbortController();
     void fetch("/api/tts/voices", {
       cache: "no-store",
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
     })
       .then((response) =>
         response.ok ? (response.json() as Promise<{ voices: TtsVoice[] }>) : null,
@@ -278,10 +297,30 @@ export function BrainwormApp() {
         if (payload?.voices.length) setTtsVoices(payload.voices);
       })
       .catch(() => undefined);
+    return () => controller.abort();
   }, [xaiApiKey]);
 
+  // Persisting serializes every conversation, so writing on each streamed
+  // token is too heavy. Debounce writes, guarantee one at least every two
+  // seconds while changes keep arriving, and flush when the page is hidden.
+  const lastSaveRef = useRef(0);
   useEffect(() => {
-    if (hydrated) saveState(state);
+    if (!hydrated) return;
+    const save = () => {
+      lastSaveRef.current = Date.now();
+      saveState(state);
+    };
+    const overdue = Date.now() - lastSaveRef.current >= 2_000;
+    const timer = window.setTimeout(save, overdue ? 0 : 400);
+    const flush = () => {
+      window.clearTimeout(timer);
+      save();
+    };
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("pagehide", flush);
+    };
   }, [hydrated, state]);
 
   useEffect(() => {
@@ -299,10 +338,14 @@ export function BrainwormApp() {
       );
   }, []);
 
+  const messageCount = activeConversation?.messages.length ?? 0;
   const lastContentLength = activeConversation?.messages.at(-1)?.content.length ?? 0;
   useEffect(() => {
+    // Never scroll the empty welcome screen: on small viewports its content
+    // is taller than the feed and jumping to the bottom cuts off the top.
+    if (!messageCount) return;
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
-  }, [activeConversation?.id, lastContentLength]);
+  }, [activeConversation?.id, messageCount, lastContentLength]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -310,6 +353,13 @@ export function BrainwormApp() {
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 176)}px`;
   }, [input]);
+
+  const focusComposer = () => {
+    // Focusing would pop the on-screen keyboard on touch devices; only
+    // autofocus where a hardware pointer and keyboard are the norm.
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  };
 
   const updateSettings = (patch: Partial<BrainwormSettings>) => {
     setState((current) => ({
@@ -335,7 +385,7 @@ export function BrainwormApp() {
     if (appMode !== "code") setPendingFiles([]);
     if (appMode !== "imagine") setPendingImage(null);
     setPanel(null);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const cycleCodeMode = () => {
@@ -426,7 +476,7 @@ export function BrainwormApp() {
     setInput("");
     setPendingFiles([]);
     setPendingImage(null);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const selectConversation = (id: string) => {
@@ -512,7 +562,7 @@ export function BrainwormApp() {
     setInput("");
     setPendingFiles([]);
     setPendingImage(null);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const regenerateMessage = async (messageId: string) => {
@@ -588,7 +638,7 @@ export function BrainwormApp() {
           mode: state.settings.appMode,
           codeSessionMode: state.settings.codeSessionMode,
           files: [],
-          mcpServers: state.settings.mcpServers,
+          mcpServers: mcpServersForRequest(),
         }),
         signal: abortController.signal,
       });
@@ -597,35 +647,23 @@ export function BrainwormApp() {
         throw new Error(payload?.error ?? `The request failed (${response.status}).`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as StreamEvent;
-          if (event.type === "delta") {
-            accumulated += event.delta;
-            patchMessage(conversationId, messageId, { content: accumulated });
-          }
-          if (event.type === "tool") {
-            streamedTools = mergeTools(streamedTools, [event.tool]);
-            patchMessage(conversationId, messageId, {
-              tools: streamedTools,
-            });
-          }
-          if (event.type === "error") throw new Error(event.message);
-          if (event.type === "done") {
-            completed = true;
-            finalSources = event.sources;
-            streamedTools = mergeTools(streamedTools, event.tools);
-            patchMessage(conversationId, messageId, { tools: streamedTools });
-          }
+      for await (const event of readStreamEvents(response.body)) {
+        if (event.type === "delta") {
+          accumulated += event.delta;
+          patchMessage(conversationId, messageId, { content: accumulated });
+        }
+        if (event.type === "tool") {
+          streamedTools = mergeTools(streamedTools, [event.tool]);
+          patchMessage(conversationId, messageId, {
+            tools: streamedTools,
+          });
+        }
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "done") {
+          completed = true;
+          finalSources = event.sources;
+          streamedTools = mergeTools(streamedTools, event.tools);
+          patchMessage(conversationId, messageId, { tools: streamedTools });
         }
       }
       if (!completed) finalSources = [];
@@ -963,7 +1001,7 @@ export function BrainwormApp() {
           mode: state.settings.appMode,
           codeSessionMode: requestCodeMode,
           files: filesForRequest.map(({ name, content }) => ({ name, content })),
-          mcpServers: state.settings.mcpServers,
+          mcpServers: mcpServersForRequest(),
         }),
         signal: abortController.signal,
       });
@@ -973,40 +1011,28 @@ export function BrainwormApp() {
         throw new Error(payload?.error ?? `The request failed (${response.status}).`);
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
       let completed = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n");
-        buffer = lines.pop() ?? "";
-        for (const line of lines) {
-          if (!line.trim()) continue;
-          const event = JSON.parse(line) as StreamEvent;
-          if (event.type === "delta") {
-            accumulated += event.delta;
-            patchMessage(conversationId, assistantMessage.id, { content: accumulated });
-          }
-          if (event.type === "tool") {
-            streamedTools = mergeTools(streamedTools, [event.tool]);
-            patchMessage(conversationId, assistantMessage.id, {
-              tools: streamedTools,
-            });
-          }
-          if (event.type === "error") throw new Error(event.message);
-          if (event.type === "done") {
-            completed = true;
-            streamedTools = mergeTools(streamedTools, event.tools);
-            patchMessage(conversationId, assistantMessage.id, {
-              status: "complete",
-              sources: event.sources,
-              tools: streamedTools,
-            });
-          }
+      for await (const event of readStreamEvents(response.body)) {
+        if (event.type === "delta") {
+          accumulated += event.delta;
+          patchMessage(conversationId, assistantMessage.id, { content: accumulated });
+        }
+        if (event.type === "tool") {
+          streamedTools = mergeTools(streamedTools, [event.tool]);
+          patchMessage(conversationId, assistantMessage.id, {
+            tools: streamedTools,
+          });
+        }
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "done") {
+          completed = true;
+          streamedTools = mergeTools(streamedTools, event.tools);
+          patchMessage(conversationId, assistantMessage.id, {
+            status: "complete",
+            sources: event.sources,
+            tools: streamedTools,
+          });
         }
       }
 
@@ -1074,7 +1100,7 @@ export function BrainwormApp() {
     patchMessage(activeConversation.id, messageId, { planState: "changes_requested" });
     updateSettings({ codeSessionMode: "plan" });
     setInput("Revise the plan: ");
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const clearAll = () => {
@@ -1474,7 +1500,7 @@ export function BrainwormApp() {
                     ref={fileInputRef}
                     className="visually-hidden"
                     type="file"
-                    multiple
+                    multiple={state.settings.appMode !== "imagine"}
                     accept={
                       state.settings.appMode === "imagine"
                         ? "image/png,image/jpeg,image/webp"

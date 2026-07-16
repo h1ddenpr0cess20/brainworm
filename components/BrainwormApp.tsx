@@ -907,7 +907,10 @@ export function BrainwormApp() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [historyQuery, state.conversations]);
 
-  const galleryItems = useMemo(() => collectGalleryItems(state.conversations), [state.conversations]);
+  const galleryItems = useMemo(
+    () => collectGalleryItems(state.conversations),
+    [state.conversations],
+  );
 
   const turns =
     activeConversation?.messages.filter((message) => message.role === "user").length ?? 0;
@@ -1761,7 +1764,6 @@ function RailButton({
       className={`rail__button ${active ? "is-active" : ""}`}
       onClick={onClick}
       aria-label={label}
-      title={label}
     >
       {children}
       <span>{label}</span>

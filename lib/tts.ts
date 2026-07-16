@@ -1,5 +1,19 @@
 const MAX_TTS_LENGTH = 15_000;
 
+type TtsModeState = {
+  appMode: "chat" | "code" | "imagine";
+  ttsEnabled: boolean;
+};
+
+/** Returns true when a change would newly allow voice playback in Code mode. */
+export function needsTtsCodeModeConfirmation(current: TtsModeState, next: TtsModeState): boolean {
+  return (
+    next.appMode === "code" &&
+    next.ttsEnabled &&
+    (current.appMode !== "code" || !current.ttsEnabled)
+  );
+}
+
 /** Turns rendered Markdown into text that sounds natural when read aloud. */
 export function toSpeechText(markdown: string): string {
   return markdown

@@ -1,5 +1,37 @@
 import { describe, expect, it } from "vitest";
-import { isTtsSpeed, toSpeechText } from "./tts";
+import { isTtsSpeed, needsTtsCodeModeConfirmation, toSpeechText } from "./tts";
+
+describe("needsTtsCodeModeConfirmation", () => {
+  it("guards both entering Code mode with TTS on and enabling TTS within Code mode", () => {
+    expect(
+      needsTtsCodeModeConfirmation(
+        { appMode: "chat", ttsEnabled: true },
+        { appMode: "code", ttsEnabled: true },
+      ),
+    ).toBe(true);
+    expect(
+      needsTtsCodeModeConfirmation(
+        { appMode: "code", ttsEnabled: false },
+        { appMode: "code", ttsEnabled: true },
+      ),
+    ).toBe(true);
+  });
+
+  it("does not warn for changes that do not newly combine TTS with Code mode", () => {
+    expect(
+      needsTtsCodeModeConfirmation(
+        { appMode: "chat", ttsEnabled: false },
+        { appMode: "code", ttsEnabled: false },
+      ),
+    ).toBe(false);
+    expect(
+      needsTtsCodeModeConfirmation(
+        { appMode: "code", ttsEnabled: true },
+        { appMode: "code", ttsEnabled: true },
+      ),
+    ).toBe(false);
+  });
+});
 
 describe("toSpeechText", () => {
   it("removes fenced code and Markdown decoration", () => {

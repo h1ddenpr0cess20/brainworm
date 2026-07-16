@@ -26,6 +26,7 @@ type ActiveClip = SpeechRequest & {
 
 const CACHE_NAME = "brainworm-tts-v1";
 const memoryCache = new Map<string, Blob>();
+const pendingAudio = new Map<string, Promise<Blob>>();
 const listeners = new Set<() => void>();
 const autoplayQueue: SpeechRequest[] = [];
 const SERVER_SNAPSHOT: TtsPlaybackState = { messageId: null, status: "idle", error: null };
@@ -201,13 +202,38 @@ async function getOrCreateAudio(
   const inMemory = memoryCache.get(key);
   if (inMemory) return inMemory;
 
+  const pending = pendingAudio.get(key);
+  if (pending) return pending;
+
+  const request = loadOrCreateAudio(key, text, voice, speed, apiKey);
+  pendingAudio.set(key, request);
+  try {
+    return await request;
+  } finally {
+    if (pendingAudio.get(key) === request) pendingAudio.delete(key);
+  }
+}
+
+async function loadOrCreateAudio(
+  key: string,
+  text: string,
+  voice: string,
+  speed: number,
+  apiKey: string,
+): Promise<Blob> {
+  const inMemory = memoryCache.get(key);
+  if (inMemory) return inMemory;
+
   const cache = await getCache();
   const cacheRequest = new Request(`${window.location.origin}/__brainworm_tts_cache__/${key}`);
-  const cachedResponse = await cache?.match(cacheRequest);
+  const cachedResponse = await cache?.match(cacheRequest).catch(() => undefined);
   if (cachedResponse) {
     const blob = await cachedResponse.blob();
-    memoryCache.set(key, blob);
-    return blob;
+    if (blob.size > 0) {
+      memoryCache.set(key, blob);
+      return blob;
+    }
+    await cache?.delete(cacheRequest).catch(() => false);
   }
 
   const response = await fetch("/api/tts", {
@@ -224,10 +250,12 @@ async function getOrCreateAudio(
   }
   const blob = await response.blob();
   memoryCache.set(key, blob);
-  await cache?.put(
-    cacheRequest,
-    new Response(blob, { headers: { "Content-Type": blob.type || "audio/mpeg" } }),
-  );
+  await cache
+    ?.put(
+      cacheRequest,
+      new Response(blob, { headers: { "Content-Type": blob.type || "audio/mpeg" } }),
+    )
+    .catch(() => undefined);
   return blob;
 }
 

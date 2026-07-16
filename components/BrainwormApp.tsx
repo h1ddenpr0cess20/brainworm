@@ -16,6 +16,7 @@ import type {
 } from "@/lib/types";
 import { makeConversationTitle } from "@/lib/prompt";
 import { parseCodeCommand } from "@/lib/codeCommands";
+import { needsTtsCodeModeConfirmation } from "@/lib/tts";
 import {
   appendMessageVariant,
   branchFromMessage,
@@ -318,7 +319,14 @@ export function BrainwormApp() {
     saveXaiApiKey(apiKey);
   };
 
+  const confirmTtsInCodeMode = (nextSettings: BrainwormSettings) =>
+    !needsTtsCodeModeConfirmation(state.settings, nextSettings) ||
+    window.confirm(
+      "Text to speech can read source code, terminal output, and secrets aloud in Code mode. Are you sure you want to continue?",
+    );
+
   const setAppMode = (appMode: BrainwormSettings["appMode"]) => {
+    if (!confirmTtsInCodeMode({ ...state.settings, appMode })) return;
     updateSettings({ appMode });
     if (appMode !== "code") setPendingFiles([]);
     if (appMode !== "imagine") setPendingImage(null);
@@ -330,6 +338,12 @@ export function BrainwormApp() {
     const order: BrainwormSettings["codeSessionMode"][] = ["normal", "plan", "always"];
     const currentIndex = order.indexOf(state.settings.codeSessionMode);
     updateSettings({ codeSessionMode: order[(currentIndex + 1) % order.length] });
+  };
+
+  const setTtsEnabled = (ttsEnabled: boolean) => {
+    if (!confirmTtsInCodeMode({ ...state.settings, ttsEnabled })) return;
+    updateSettings({ ttsEnabled });
+    if (!ttsEnabled) stopTtsMessage();
   };
 
   const addMcpServer = () => {
@@ -1132,7 +1146,9 @@ export function BrainwormApp() {
         <header className="topbar">
           <BrainLogo className="topbar__mobile-logo" withWordmark />
           <div className="topbar__thread">
-            <h1>{activeConversation?.title ?? "Fresh burrow"}</h1>
+            <h1 title={activeConversation?.title ?? "Fresh burrow"}>
+              {activeConversation?.title ?? "Fresh burrow"}
+            </h1>
             <span>
               {turns} {turns === 1 ? "turn" : "turns"}
             </span>
@@ -1685,10 +1701,7 @@ export function BrainwormApp() {
                     >
                       <Toggle
                         checked={state.settings.ttsEnabled}
-                        onChange={(ttsEnabled) => {
-                          updateSettings({ ttsEnabled });
-                          if (!ttsEnabled) stopTtsMessage();
-                        }}
+                        onChange={setTtsEnabled}
                         label="Enable xAI text to speech"
                         disabled={!hasXaiApiKey}
                       />

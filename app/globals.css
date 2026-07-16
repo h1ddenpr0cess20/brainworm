@@ -2462,7 +2462,7 @@ a:focus-visible {
     justify-content: flex-end;
   }
   .topbar__thread h1 {
-    max-width: 100%;
+    max-width: min(38vw, 160px);
     font-size: 15px;
     text-align: right;
   }

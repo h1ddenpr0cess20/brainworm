@@ -8,6 +8,18 @@ Brainworm is a bookish xAI workspace built with Next.js for Vercel. It adapts th
 
 Wordmark's xAI TTS and Grok Imagine implementations are the behavioral reference for voice playback, cache handling, generation/edit request shapes, and media persistence. Each reader supplies their own xAI API key; Brainworm sends provider calls through Next.js server routes without storing the key on the server.
 
+## Safety and intended use
+
+Brainworm is a creative and technical tool. It is **not intended for children**
+and must not be used as a companion, friend, therapist, caregiver, or romantic
+partner. AI output can be inaccurate, unsafe, or inappropriate; never rely on
+Brainworm for crisis response, professional advice, or safety-critical
+decisions.
+
+Read the [AI Output Disclaimer and Conditions of Use](docs/ai-output-disclaimer.md)
+and [Not a Companion](docs/not-a-companion.md) policy before using or deploying
+the app. The [documentation index](docs/README.md) summarizes these boundaries.
+
 ## Run locally
 
 Requires Node.js 22 or newer (`.nvmrc` is included).

@@ -32,7 +32,11 @@ function GeneratedImageCard({
   return (
     <figure className="generated-image">
       {url ? (
-        <button className="generated-image__zoom" onClick={() => onZoom(image)} title="View full size">
+        <button
+          className="generated-image__zoom"
+          onClick={() => onZoom(image)}
+          aria-label="View full size"
+        >
           {/* Blob URLs are local IndexedDB assets and cannot be optimized by next/image. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={url} alt={image.prompt} />
@@ -43,13 +47,9 @@ function GeneratedImageCard({
         </div>
       )}
       <figcaption>
-        <span title={image.prompt}>{image.prompt}</span>
+        <span>{image.prompt}</span>
         <small>{imageMeta(image)}</small>
-        <button
-          onClick={() => void downloadImage(image)}
-          aria-label="Download generated image"
-          title="Download image"
-        >
+        <button onClick={() => void downloadImage(image)} aria-label="Download generated image">
           <DownloadIcon />
         </button>
       </figcaption>

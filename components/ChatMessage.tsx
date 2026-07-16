@@ -110,12 +110,7 @@ export function ChatMessage({
         )}
         {message.status !== "streaming" && message.content && (
           <div className="message__actions">
-            <button
-              className="message__action"
-              onClick={copy}
-              aria-label="Copy message"
-              title="Copy message"
-            >
+            <button className="message__action" onClick={copy} aria-label="Copy message">
               <CopyIcon />
               <span>{copied ? "Copied" : "Copy"}</span>
             </button>
@@ -125,7 +120,6 @@ export function ChatMessage({
                 onClick={() => onRegenerate(message.id)}
                 disabled={busy}
                 aria-label="Regenerate reply"
-                title="Regenerate reply"
               >
                 <RegenerateIcon />
                 <span>Regenerate</span>
@@ -137,7 +131,6 @@ export function ChatMessage({
                 onClick={() => onBranch(message.id)}
                 disabled={busy}
                 aria-label="Branch conversation from here"
-                title="Branch conversation from here"
               >
                 <BranchIcon />
                 <span>Branch</span>

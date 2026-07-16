@@ -953,9 +953,7 @@ export function BrainwormApp() {
         >
           <SettingsIcon />
         </RailButton>
-        <div className="rail__model" title={health?.model ?? "grok-4.5"}>
-          G4.5
-        </div>
+        <div className="rail__model">G4.5</div>
       </aside>
 
       <main className="main-shell">
@@ -1187,7 +1185,7 @@ export function BrainwormApp() {
             {(pendingFiles.length > 0 || pendingImage) && (
               <div className="composer__files">
                 {pendingFiles.map((file) => (
-                  <span key={file.name} title={`${Math.ceil(file.size / 1024)} KB`}>
+                  <span key={file.name}>
                     @{file.name}
                     <button
                       onClick={() =>
@@ -1202,7 +1200,7 @@ export function BrainwormApp() {
                   </span>
                 ))}
                 {pendingImage && (
-                  <span title="This image will be edited with Grok Imagine">
+                  <span>
                     @{pendingImage.name}
                     <button
                       onClick={() => setPendingImage(null)}
@@ -1304,7 +1302,7 @@ export function BrainwormApp() {
                       <button
                         className="composer__latest"
                         onClick={() => void attachLatestImage()}
-                        title="Edit latest image"
+                        aria-label="Edit latest image"
                       >
                         Latest
                       </button>
@@ -1313,11 +1311,6 @@ export function BrainwormApp() {
                     className="composer__attach"
                     onClick={() => fileInputRef.current?.click()}
                     aria-label={
-                      state.settings.appMode === "imagine"
-                        ? "Attach an image to edit"
-                        : "Attach source files"
-                    }
-                    title={
                       state.settings.appMode === "imagine"
                         ? "Attach an image to edit"
                         : "Attach source files"

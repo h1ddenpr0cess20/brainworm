@@ -36,7 +36,7 @@ function GalleryTile({ item, onOpen }: { item: GalleryItem; onOpen: (item: Galle
   const url = useImageBlobUrl(item.image.id);
 
   return (
-    <button className="gallery-tile" onClick={() => onOpen(item)} title={item.image.prompt}>
+    <button className="gallery-tile" onClick={() => onOpen(item)}>
       {url ? (
         // Blob URLs are local IndexedDB assets and cannot be optimized by next/image.
         // eslint-disable-next-line @next/next/no-img-element

@@ -31,7 +31,6 @@ export function TtsControls({ messageId, text, voice, speed }: TtsControlsProps)
         onClick={() => void playTtsMessage(request)}
         disabled={status === "loading"}
         aria-label={status === "playing" ? "Pause voice" : "Play voice"}
-        title={status === "playing" ? "Pause voice" : "Play voice"}
       >
         {status === "loading" ? (
           <span className="tts-spinner" />
@@ -42,11 +41,7 @@ export function TtsControls({ messageId, text, voice, speed }: TtsControlsProps)
         )}
       </button>
       {(status === "playing" || status === "paused") && (
-        <button
-          onClick={() => stopTtsMessage(messageId)}
-          aria-label="Stop voice"
-          title="Stop voice"
-        >
+        <button onClick={() => stopTtsMessage(messageId)} aria-label="Stop voice">
           <StopIcon />
         </button>
       )}
@@ -54,7 +49,6 @@ export function TtsControls({ messageId, text, voice, speed }: TtsControlsProps)
         onClick={() => void downloadTtsMessage(request)}
         disabled={status === "loading"}
         aria-label="Download voice clip"
-        title="Download voice clip"
       >
         <DownloadIcon />
       </button>

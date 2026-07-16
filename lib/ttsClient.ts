@@ -82,8 +82,17 @@ export async function autoplayTtsMessage(request: SpeechRequest): Promise<void> 
 }
 
 export function stopTtsMessage(messageId?: string): void {
+  if (!active || (messageId && active.messageId !== messageId)) {
+    if (messageId) {
+      // Only drop this message's queued autoplay; leave other playback alone.
+      const queued = autoplayQueue.findIndex((item) => item.messageId === messageId);
+      if (queued >= 0) autoplayQueue.splice(queued, 1);
+    } else {
+      autoplayQueue.length = 0;
+    }
+    return;
+  }
   autoplayQueue.length = 0;
-  if (!active || (messageId && active.messageId !== messageId)) return;
   active.audio.pause();
   active.audio.currentTime = 0;
   const stoppedId = active.messageId;
@@ -134,9 +143,9 @@ async function startSpeech(request: SpeechRequest, preserveQueue: boolean): Prom
     audio.addEventListener(
       "ended",
       () => {
-        const finishedId = active?.messageId ?? request.messageId;
+        if (active?.audio !== audio) return;
         disposeActive();
-        emit({ messageId: finishedId, status: "idle", error: null });
+        emit({ messageId: request.messageId, status: "idle", error: null });
         window.setTimeout(() => void playNextAutoplay(), 300);
       },
       { once: true },
@@ -144,6 +153,7 @@ async function startSpeech(request: SpeechRequest, preserveQueue: boolean): Prom
     audio.addEventListener(
       "error",
       () => {
+        if (active?.audio !== audio) return;
         disposeActive();
         emit({
           messageId: request.messageId,
@@ -155,8 +165,11 @@ async function startSpeech(request: SpeechRequest, preserveQueue: boolean): Prom
       { once: true },
     );
     await audio.play();
+    if (generation !== requestGeneration) return;
     emit({ messageId: request.messageId, status: "playing", error: null });
   } catch (error) {
+    // A newer clip owns the player now; a stale failure must not clobber it.
+    if (generation !== requestGeneration) return;
     disposeActive();
     const blocked = error instanceof DOMException && error.name === "NotAllowedError";
     emit({

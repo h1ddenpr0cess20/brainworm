@@ -33,6 +33,15 @@ describe("user-configured MCP tools", () => {
     expect(buildMcpTools([server], "always")[0]?.allowed_tools).toEqual(server.allowedTools);
   });
 
+  it("does not let disabled servers crowd enabled ones out of the cap", () => {
+    const disabled = Array.from({ length: 8 }, (_, index) => ({
+      ...server,
+      id: `disabled-${index}`,
+      enabled: false,
+    }));
+    expect(buildMcpTools([...disabled, server], "normal")).toHaveLength(1);
+  });
+
   it("rejects insecure, disabled, duplicate, and unbounded servers", () => {
     expect(
       buildMcpTools(

@@ -225,8 +225,10 @@ export function buildMcpTools(
   if (!Array.isArray(value)) return [];
   const seenLabels = new Set<string>();
   const tools: RemoteMcpTool[] = [];
-  for (const server of value.slice(0, 8)) {
-    if (!server || server.enabled !== true) continue;
+  // Filter before capping so disabled entries cannot crowd enabled ones out
+  // of the eight available slots.
+  const enabled = value.filter((server) => server && server.enabled === true).slice(0, 8);
+  for (const server of enabled) {
     const serverUrl = typeof server.url === "string" ? server.url.trim() : "";
     const rawLabel = typeof server.label === "string" ? server.label.trim() : "";
     const serverLabel = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);

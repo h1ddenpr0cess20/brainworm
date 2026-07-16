@@ -37,6 +37,14 @@ describe("Code slash commands", () => {
     expect(parseCodeCommand("/new", "normal", false)).toEqual({ type: "new" });
   });
 
+  it("keeps the inline task verbatim, including line breaks", () => {
+    expect(parseCodeCommand("/plan add auth\n- login\n- logout", "normal", false)).toEqual({
+      type: "mode",
+      mode: "plan",
+      prompt: "add auth\n- login\n- logout",
+    });
+  });
+
   it("captures unknown slash commands instead of treating them as prompts", () => {
     expect(parseCodeCommand("/wat", "normal", false)).toEqual({
       type: "unknown",

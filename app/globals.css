@@ -457,6 +457,10 @@ a:focus-visible {
   line-height: 1.55;
 }
 
+.message--user .message__content p {
+  white-space: pre-wrap;
+}
+
 .message--error .message__content {
   color: var(--clay);
 }

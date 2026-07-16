@@ -193,12 +193,13 @@ function makeInitialState(): PersistedState {
 }
 
 function repairPersistedState(saved: PersistedState): PersistedState {
+  const savedSettings: Partial<BrainwormSettings> = saved.settings ?? {};
   const conversations = saved.conversations
     .filter((conversation) => conversation && Array.isArray(conversation.messages))
     .map((conversation) => ({
       ...conversation,
       messages: conversation.messages
-        .filter((message) => message.content || message.status !== "streaming")
+        .filter((message) => message && (message.content || message.status !== "streaming"))
         .map((message) =>
           message.status === "streaming" ? { ...message, status: "complete" as const } : message,
         ),
@@ -211,12 +212,12 @@ function repairPersistedState(saved: PersistedState): PersistedState {
     conversations,
     settings: {
       ...DEFAULT_SETTINGS,
-      ...saved.settings,
+      ...savedSettings,
       codeSessionMode:
-        saved.settings.codeSessionMode === "plan" || saved.settings.codeSessionMode === "always"
-          ? saved.settings.codeSessionMode
+        savedSettings.codeSessionMode === "plan" || savedSettings.codeSessionMode === "always"
+          ? savedSettings.codeSessionMode
           : "normal",
-      mcpServers: Array.isArray(saved.settings.mcpServers) ? saved.settings.mcpServers : [],
+      mcpServers: Array.isArray(savedSettings.mcpServers) ? savedSettings.mcpServers : [],
     },
   };
 }
@@ -244,6 +245,12 @@ export function BrainwormApp() {
     state.conversations[0];
   const hasXaiApiKey = Boolean(xaiApiKey.trim());
   const enabledMcpServers = state.settings.mcpServers.filter((server) => server.enabled);
+  // Server configs carry authorization secrets; only Code requests need them,
+  // and disabled servers should never leave the browser.
+  const mcpServersForRequest = () =>
+    state.settings.appMode === "code"
+      ? state.settings.mcpServers.filter((server) => server.enabled)
+      : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -251,7 +258,13 @@ export function BrainwormApp() {
     const savedApiKey = loadXaiApiKey();
     queueMicrotask(() => {
       if (cancelled) return;
-      if (saved) setState(repairPersistedState(saved));
+      if (saved) {
+        try {
+          setState(repairPersistedState(saved));
+        } catch {
+          // A corrupt saved state must not keep the app stuck invisible.
+        }
+      }
       setXaiApiKey(savedApiKey);
       setHydrated(true);
     });
@@ -263,9 +276,11 @@ export function BrainwormApp() {
   useEffect(() => {
     const apiKey = xaiApiKey.trim();
     if (!apiKey) return;
+    const controller = new AbortController();
     void fetch("/api/tts/voices", {
       cache: "no-store",
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: controller.signal,
     })
       .then((response) =>
         response.ok ? (response.json() as Promise<{ voices: TtsVoice[] }>) : null,
@@ -274,6 +289,7 @@ export function BrainwormApp() {
         if (payload?.voices.length) setTtsVoices(payload.voices);
       })
       .catch(() => undefined);
+    return () => controller.abort();
   }, [xaiApiKey]);
 
   useEffect(() => {
@@ -584,7 +600,7 @@ export function BrainwormApp() {
           mode: state.settings.appMode,
           codeSessionMode: state.settings.codeSessionMode,
           files: [],
-          mcpServers: state.settings.mcpServers,
+          mcpServers: mcpServersForRequest(),
         }),
         signal: abortController.signal,
       });
@@ -959,7 +975,7 @@ export function BrainwormApp() {
           mode: state.settings.appMode,
           codeSessionMode: requestCodeMode,
           files: filesForRequest.map(({ name, content }) => ({ name, content })),
-          mcpServers: state.settings.mcpServers,
+          mcpServers: mcpServersForRequest(),
         }),
         signal: abortController.signal,
       });
@@ -1467,7 +1483,7 @@ export function BrainwormApp() {
                     ref={fileInputRef}
                     className="visually-hidden"
                     type="file"
-                    multiple
+                    multiple={state.settings.appMode !== "imagine"}
                     accept={
                       state.settings.appMode === "imagine"
                         ? "image/png,image/jpeg,image/webp"

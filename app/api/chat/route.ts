@@ -9,6 +9,7 @@ import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 import type {
   AppMode,
   CodeSessionMode,
+  McpServerConfig,
   MessageRole,
   ReasoningEffort,
   StreamEvent,
@@ -29,7 +30,7 @@ type ChatBody = {
   mode?: AppMode;
   codeSessionMode?: CodeSessionMode;
   files?: { name?: string; content?: string }[];
-  mcpEnabled?: boolean;
+  mcpServers?: McpServerConfig[];
 };
 
 const MAX_MESSAGES = 80;
@@ -60,9 +61,9 @@ export async function POST(request: Request): Promise<Response> {
     : "medium";
   const appMode: AppMode = body.mode === "code" ? "code" : "chat";
   const codeSessionMode: CodeSessionMode =
-    body.codeSessionMode === "plan" || body.codeSessionMode === "verify"
+    body.codeSessionMode === "plan" || body.codeSessionMode === "always"
       ? body.codeSessionMode
-      : "build";
+      : "normal";
   const files = validateFiles(body.files);
   if (files === null) {
     return Response.json(
@@ -70,16 +71,12 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const mcpTool = appMode === "code" && body.mcpEnabled ? buildMcpTool(codeSessionMode) : null;
+  const mcpTools = appMode === "code" ? buildMcpTools(body.mcpServers, codeSessionMode) : [];
   const systemPrompt =
     appMode === "code"
-      ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(Boolean(mcpTool), codeSessionMode !== "build")}${formatFiles(files)}`
+      ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(mcpTools.length, codeSessionMode !== "always")}${formatFiles(files)}`
       : BRAINWORM_SYSTEM_PROMPT;
-  const tools = [
-    ...(body.webSearch ? [{ type: "web_search" }] : []),
-    ...(appMode === "code" ? [{ type: "code_interpreter" }] : []),
-    ...(mcpTool ? [mcpTool] : []),
-  ];
+  const tools = [...(body.webSearch ? [{ type: "web_search" }] : []), ...mcpTools];
 
   let upstream: Response;
   try {
@@ -147,6 +144,7 @@ export async function POST(request: Request): Promise<Response> {
             const parsed = parseXaiEvent(sseEvent);
             if (!parsed) continue;
             if (parsed.kind === "delta") emit({ type: "delta", delta: parsed.delta });
+            if (parsed.kind === "tool") emit({ type: "tool", tool: parsed.tool });
             if (parsed.kind === "error") {
               emit({ type: "error", message: parsed.message });
               finish();
@@ -157,6 +155,7 @@ export async function POST(request: Request): Promise<Response> {
                 type: "done",
                 responseId: parsed.responseId,
                 sources: parsed.sources,
+                tools: parsed.tools,
               });
               finish();
               return;
@@ -170,14 +169,20 @@ export async function POST(request: Request): Promise<Response> {
           for (const sseEvent of split.events) {
             const parsed = parseXaiEvent(sseEvent);
             if (parsed?.kind === "delta") emit({ type: "delta", delta: parsed.delta });
+            if (parsed?.kind === "tool") emit({ type: "tool", tool: parsed.tool });
             if (parsed?.kind === "complete") {
-              emit({ type: "done", responseId: parsed.responseId, sources: parsed.sources });
+              emit({
+                type: "done",
+                responseId: parsed.responseId,
+                sources: parsed.sources,
+                tools: parsed.tools,
+              });
               finish();
               return;
             }
           }
         }
-        emit({ type: "done", sources: [] });
+        emit({ type: "done", sources: [], tools: [] });
         finish();
       } catch (error) {
         if (!request.signal.aborted) {
@@ -204,7 +209,7 @@ export async function POST(request: Request): Promise<Response> {
   });
 }
 
-type RemoteMcpTool = {
+export type RemoteMcpTool = {
   type: "mcp";
   server_url: string;
   server_label: string;
@@ -213,43 +218,51 @@ type RemoteMcpTool = {
   authorization?: string;
 };
 
-function buildMcpTool(mode: CodeSessionMode): RemoteMcpTool | null {
-  const serverUrl = process.env.BRAINWORM_MCP_URL?.trim();
-  const serverLabel = process.env.BRAINWORM_MCP_LABEL?.trim();
-  if (!serverUrl || !serverLabel || !isSecureUrl(serverUrl)) return null;
-
-  const fullTools = parseToolList(process.env.BRAINWORM_MCP_ALLOWED_TOOLS);
-  const readOnlyTools = parseToolList(process.env.BRAINWORM_MCP_READONLY_TOOLS);
-  const allowAll = process.env.BRAINWORM_MCP_ALLOW_ALL === "true";
-  const allowedTools = mode === "build" ? fullTools : readOnlyTools;
-
-  // xAI's Responses API does not yet support require_approval for MCP. Make
-  // an explicit allowlist the default permission boundary; opting into all
-  // tools requires a separate server-side environment flag.
-  if (!allowedTools.length && !(mode === "build" && allowAll)) return null;
-
-  return {
-    type: "mcp",
-    server_url: serverUrl,
-    server_label: serverLabel.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48),
-    server_description:
-      process.env.BRAINWORM_MCP_DESCRIPTION?.trim() ||
-      "The user's remote coding workspace and repository tools.",
-    allowed_tools: allowedTools.length ? allowedTools : undefined,
-    authorization: process.env.BRAINWORM_MCP_AUTHORIZATION?.trim() || undefined,
-  };
-}
-
-function parseToolList(value: string | undefined): string[] {
-  if (!value) return [];
-  return [
-    ...new Set(
-      value
-        .split(",")
-        .map((item) => item.trim())
-        .filter(Boolean),
-    ),
-  ].slice(0, 64);
+export function buildMcpTools(
+  value: ChatBody["mcpServers"],
+  mode: CodeSessionMode,
+): RemoteMcpTool[] {
+  if (!Array.isArray(value)) return [];
+  const seenLabels = new Set<string>();
+  const tools: RemoteMcpTool[] = [];
+  for (const server of value.slice(0, 8)) {
+    if (!server || server.enabled !== true) continue;
+    const serverUrl = typeof server.url === "string" ? server.url.trim() : "";
+    const rawLabel = typeof server.label === "string" ? server.label.trim() : "";
+    const serverLabel = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
+    if (!serverUrl || !serverLabel || seenLabels.has(serverLabel) || !isSecureUrl(serverUrl))
+      continue;
+    const sourceTools = mode === "always" ? server.allowedTools : server.readOnlyTools;
+    const allowedTools = Array.isArray(sourceTools)
+      ? [
+          ...new Set(
+            sourceTools
+              .filter((item) => typeof item === "string")
+              .map((item) => item.trim())
+              .filter(Boolean),
+          ),
+        ].slice(0, 64)
+      : [];
+    // Never expose an unbounded MCP server. Empty allowlists disable it for
+    // that mode instead of silently granting every tool the server advertises.
+    if (!allowedTools.length) continue;
+    seenLabels.add(serverLabel);
+    tools.push({
+      type: "mcp",
+      server_url: serverUrl,
+      server_label: serverLabel,
+      server_description:
+        typeof server.description === "string" && server.description.trim()
+          ? server.description.trim().slice(0, 500)
+          : "A user-configured coding workspace.",
+      allowed_tools: allowedTools,
+      authorization:
+        typeof server.authorization === "string" && server.authorization.trim()
+          ? server.authorization.trim().slice(0, 4096)
+          : undefined,
+    });
+  }
+  return tools;
 }
 
 function isSecureUrl(value: string): boolean {

@@ -3,8 +3,26 @@ export type MessageStatus = "complete" | "streaming" | "error";
 export type ReasoningEffort = "low" | "medium" | "high";
 export type Theme = "paper" | "night";
 export type AppMode = "chat" | "code" | "imagine";
-export type CodeSessionMode = "build" | "plan" | "verify";
+export type CodeSessionMode = "normal" | "plan" | "always";
 export type ImagineModel = "grok-imagine-image" | "grok-imagine-image-quality";
+
+export type McpServerConfig = {
+  id: string;
+  label: string;
+  url: string;
+  description: string;
+  authorization: string;
+  allowedTools: string[];
+  readOnlyTools: string[];
+  enabled: boolean;
+};
+
+export type ToolActivity = {
+  id: string;
+  name: string;
+  server?: string;
+  status: "running" | "complete" | "error";
+};
 
 export type Source = {
   title: string;
@@ -25,6 +43,9 @@ export type Message = {
   sources?: Source[];
   attachments?: string[];
   images?: GeneratedImageRef[];
+  codeMode?: CodeSessionMode;
+  planState?: "proposed" | "approved" | "changes_requested";
+  tools?: ToolActivity[];
   /** Every completed version of a regenerated assistant reply, oldest first. */
   variants?: MessageVariant[];
   variantIndex?: number;
@@ -55,7 +76,7 @@ export type BrainwormSettings = {
   theme: Theme;
   appMode: AppMode;
   codeSessionMode: CodeSessionMode;
-  mcpEnabled: boolean;
+  mcpServers: McpServerConfig[];
   ttsEnabled: boolean;
   ttsAutoplay: boolean;
   ttsVoice: string;
@@ -81,5 +102,6 @@ export type PersistedState = {
 
 export type StreamEvent =
   | { type: "delta"; delta: string }
-  | { type: "done"; responseId?: string; sources: Source[] }
+  | { type: "tool"; tool: ToolActivity }
+  | { type: "done"; responseId?: string; sources: Source[]; tools: ToolActivity[] }
   | { type: "error"; message: string };

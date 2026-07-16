@@ -7,12 +7,15 @@ import type {
   GeneratedImageRef,
   Message,
   MessageVariant,
+  McpServerConfig,
   PersistedState,
   Source,
   StreamEvent,
+  ToolActivity,
   TtsVoice,
 } from "@/lib/types";
 import { makeConversationTitle } from "@/lib/prompt";
+import { parseCodeCommand } from "@/lib/codeCommands";
 import {
   appendMessageVariant,
   branchFromMessage,
@@ -53,9 +56,6 @@ type Panel = "history" | "settings" | null;
 type SettingsTab = "model" | "tools" | "voice" | "workspaces" | "theme" | "data";
 type Health = {
   model: string;
-  mcpConfigured: boolean;
-  mcpLabel: string | null;
-  mcpReadOnlyConfigured: boolean;
 };
 type PendingFile = { name: string; content: string; size: number };
 type PendingImage = { name: string; dataUrl: string };
@@ -65,8 +65,8 @@ const DEFAULT_SETTINGS: BrainwormSettings = {
   webSearch: false,
   theme: "paper",
   appMode: "chat",
-  codeSessionMode: "build",
-  mcpEnabled: false,
+  codeSessionMode: "normal",
+  mcpServers: [],
   ttsEnabled: false,
   ttsAutoplay: true,
   ttsVoice: "eve",
@@ -109,17 +109,17 @@ const WORDMARK_XAI_VOICES: TtsVoice[] = [
 ].map((voiceId) => ({ voiceId, name: voiceId[0].toUpperCase() + voiceId.slice(1) }));
 
 const STARTERS = [
-  "Explain a hard idea with a good analogy",
-  "Help me untangle a project plan",
-  "Recommend a strange, wonderful book",
-  "Dig into the latest research on a topic",
+  "Explain quantum entanglement to a curious 12-year-old",
+  "Plan a two-week portfolio launch with 90 minutes per weekday",
+  "Recommend five surreal novels under 300 pages",
+  "Compare SQLite and PostgreSQL for a small SaaS app",
 ];
 
 const CODE_STARTERS = [
-  "Explain the architecture of these files",
-  "Find the bug and return a minimal patch",
-  "Plan this feature before writing code",
-  "Review this code for correctness and security",
+  "Build a TypeScript debounce function with Vitest tests",
+  "Fix this JavaScript bug: ['10', '2', '1'].sort() returns the wrong order",
+  "Plan a REST API for a personal bookmark manager",
+  "Secure an Express login endpoint against brute-force attacks",
 ];
 
 const IMAGINE_STARTERS = [
@@ -132,9 +132,10 @@ const IMAGINE_STARTERS = [
 const IMAGINE_RATIOS = ["auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
 
 const CODE_COMMANDS = [
-  { command: "/plan", description: "Plan first; do not implement" },
-  { command: "/build", description: "Return implementation-ready changes" },
-  { command: "/verify", description: "Review code and lead with findings" },
+  { command: "/plan", description: "Explore read-only and propose a plan" },
+  { command: "/normal", description: "Use the normal coding mode" },
+  { command: "/always-approve", description: "Allow configured write tools" },
+  { command: "/mcp", description: "Manage workspace MCP servers" },
   { command: "/effort", description: "Set low, medium, or high reasoning" },
   { command: "/search", description: "Toggle live web search" },
   { command: "/new", description: "Start a fresh coding session" },
@@ -144,8 +145,29 @@ function makeId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
+function parseCommaList(value: string): string[] {
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 64);
+}
+
+function mergeTools(current: ToolActivity[] = [], incoming: ToolActivity[]): ToolActivity[] {
+  const tools = new Map(current.map((tool) => [tool.id, tool]));
+  for (const tool of incoming) tools.set(tool.id, { ...tools.get(tool.id), ...tool });
+  return [...tools.values()];
+}
+
 function currentTimestamp(): number {
   return Date.now();
+}
+
+function codeModeLabel(mode: BrainwormSettings["codeSessionMode"]): string {
+  return mode === "always" ? "Always-approve" : mode[0].toUpperCase() + mode.slice(1);
 }
 
 function makeConversation(): Conversation {
@@ -186,7 +208,15 @@ function repairPersistedState(saved: PersistedState): PersistedState {
     version: 1,
     activeConversationId: activeExists ? saved.activeConversationId : conversations[0].id,
     conversations,
-    settings: { ...DEFAULT_SETTINGS, ...saved.settings },
+    settings: {
+      ...DEFAULT_SETTINGS,
+      ...saved.settings,
+      codeSessionMode:
+        saved.settings.codeSessionMode === "plan" || saved.settings.codeSessionMode === "always"
+          ? saved.settings.codeSessionMode
+          : "normal",
+      mcpServers: Array.isArray(saved.settings.mcpServers) ? saved.settings.mcpServers : [],
+    },
   };
 }
 
@@ -212,6 +242,7 @@ export function BrainwormApp() {
     state.conversations.find((item) => item.id === state.activeConversationId) ??
     state.conversations[0];
   const hasXaiApiKey = Boolean(xaiApiKey.trim());
+  const enabledMcpServers = state.settings.mcpServers.filter((server) => server.enabled);
 
   useEffect(() => {
     let cancelled = false;
@@ -259,9 +290,6 @@ export function BrainwormApp() {
       .catch(() =>
         setHealth({
           model: "grok-4.5",
-          mcpConfigured: false,
-          mcpLabel: null,
-          mcpReadOnlyConfigured: false,
         }),
       );
   }, []);
@@ -299,9 +327,37 @@ export function BrainwormApp() {
   };
 
   const cycleCodeMode = () => {
-    const order: BrainwormSettings["codeSessionMode"][] = ["build", "plan", "verify"];
+    const order: BrainwormSettings["codeSessionMode"][] = ["normal", "plan", "always"];
     const currentIndex = order.indexOf(state.settings.codeSessionMode);
     updateSettings({ codeSessionMode: order[(currentIndex + 1) % order.length] });
+  };
+
+  const addMcpServer = () => {
+    const server: McpServerConfig = {
+      id: makeId("mcp"),
+      label: `workspace_${state.settings.mcpServers.length + 1}`,
+      url: "",
+      description: "Repository files, search, edits, and verification tools",
+      authorization: "",
+      allowedTools: [],
+      readOnlyTools: [],
+      enabled: true,
+    };
+    updateSettings({ mcpServers: [...state.settings.mcpServers, server] });
+  };
+
+  const updateMcpServer = (id: string, patch: Partial<McpServerConfig>) => {
+    updateSettings({
+      mcpServers: state.settings.mcpServers.map((server) =>
+        server.id === id ? { ...server, ...patch } : server,
+      ),
+    });
+  };
+
+  const removeMcpServer = (id: string) => {
+    updateSettings({
+      mcpServers: state.settings.mcpServers.filter((server) => server.id !== id),
+    });
   };
 
   const addFiles = async (files: FileList | null) => {
@@ -478,6 +534,7 @@ export function BrainwormApp() {
     const abortController = new AbortController();
     abortRef.current = abortController;
     let accumulated = "";
+    let streamedTools: ToolActivity[] = [];
     let finalSources: Source[] = [];
     let completed = false;
 
@@ -513,7 +570,7 @@ export function BrainwormApp() {
           mode: state.settings.appMode,
           codeSessionMode: state.settings.codeSessionMode,
           files: [],
-          mcpEnabled: state.settings.mcpEnabled,
+          mcpServers: state.settings.mcpServers,
         }),
         signal: abortController.signal,
       });
@@ -538,10 +595,18 @@ export function BrainwormApp() {
             accumulated += event.delta;
             patchMessage(conversationId, messageId, { content: accumulated });
           }
+          if (event.type === "tool") {
+            streamedTools = mergeTools(streamedTools, [event.tool]);
+            patchMessage(conversationId, messageId, {
+              tools: streamedTools,
+            });
+          }
           if (event.type === "error") throw new Error(event.message);
           if (event.type === "done") {
             completed = true;
             finalSources = event.sources;
+            streamedTools = mergeTools(streamedTools, event.tools);
+            patchMessage(conversationId, messageId, { tools: streamedTools });
           }
         }
       }
@@ -612,6 +677,15 @@ export function BrainwormApp() {
     const now = currentTimestamp();
     const conversationId = activeConversation.id;
     const sourceImage = pendingImage;
+    const imagineHistory = activeConversation.messages
+      .filter(
+        (message): message is Message & { role: "user" | "assistant" } =>
+          (message.role === "user" || message.role === "assistant") &&
+          message.status === "complete" &&
+          Boolean(message.content.trim()),
+      )
+      .slice(-24)
+      .map(({ role, content }) => ({ role, content }));
     const userMessage: Message = {
       id: makeId("user"),
       role: "user",
@@ -666,6 +740,9 @@ export function BrainwormApp() {
           resolution: state.settings.imagineResolution,
           count: state.settings.imagineCount,
           sourceImage: sourceImage?.dataUrl,
+          webSearch: state.settings.webSearch,
+          reasoningEffort: state.settings.reasoningEffort,
+          messages: imagineHistory,
         }),
         signal: abortController.signal,
       });
@@ -676,6 +753,9 @@ export function BrainwormApp() {
         aspectRatio?: string;
         resolution?: "1k" | "2k";
         kind?: "generated" | "edited";
+        usedPrompt?: string;
+        sources?: Source[];
+        tools?: ToolActivity[];
       };
       if (!response.ok || !payload.images?.length)
         throw new Error(payload.error || "Grok Imagine returned no images.");
@@ -686,7 +766,7 @@ export function BrainwormApp() {
           await saveImageBlob(id, base64ToBlob(image.b64, image.mimeType));
           return {
             id,
-            prompt,
+            prompt: payload.usedPrompt ?? prompt,
             mimeType: image.mimeType,
             model: payload.model ?? state.settings.imagineModel,
             aspectRatio: payload.aspectRatio ?? state.settings.imagineAspectRatio,
@@ -703,6 +783,8 @@ export function BrainwormApp() {
             : `I found ${images.length} variations between the pages.`,
         status: "complete",
         images,
+        sources: payload.sources,
+        tools: payload.tools,
       });
     } catch (error) {
       if (abortController.signal.aborted) {
@@ -722,7 +804,10 @@ export function BrainwormApp() {
     }
   };
 
-  const sendMessage = async (textOverride?: string) => {
+  const sendMessage = async (
+    textOverride?: string,
+    codeModeOverride?: BrainwormSettings["codeSessionMode"],
+  ) => {
     let text = (textOverride ?? input).trim();
     if (!text || streamingMessageId || !activeConversation) return;
     if (!hasXaiApiKey) {
@@ -736,38 +821,60 @@ export function BrainwormApp() {
       return;
     }
 
-    let requestCodeMode = state.settings.codeSessionMode;
+    let requestCodeMode = codeModeOverride ?? state.settings.codeSessionMode;
     if (state.settings.appMode === "code" && text.startsWith("/")) {
-      const [rawCommand, ...rest] = text.split(/\s+/);
-      const command = rawCommand.toLowerCase();
-      const remainder = rest.join(" ").trim();
-      if (command === "/new") {
+      const action = parseCodeCommand(
+        text,
+        state.settings.codeSessionMode,
+        state.settings.webSearch,
+      );
+      if (action?.type === "new") {
         newConversation();
         return;
       }
-      if (command === "/search") {
-        updateSettings({
-          webSearch:
-            remainder === "on" ? true : remainder === "off" ? false : !state.settings.webSearch,
-        });
+      if (action?.type === "search") {
+        updateSettings({ webSearch: action.enabled });
         setInput("");
         return;
       }
-      if (command === "/effort") {
-        if (remainder === "low" || remainder === "medium" || remainder === "high") {
-          updateSettings({ reasoningEffort: remainder });
-        }
+      if (action?.type === "effort") {
+        if (action.effort) updateSettings({ reasoningEffort: action.effort });
         setInput("");
         return;
       }
-      if (command === "/plan" || command === "/build" || command === "/verify") {
-        requestCodeMode = command.slice(1) as BrainwormSettings["codeSessionMode"];
+      if (action?.type === "mcp") {
+        setSettingsTab("workspaces");
+        setPanel("settings");
+        setInput("");
+        return;
+      }
+      if (action?.type === "mode") {
+        requestCodeMode = action.mode;
         updateSettings({ codeSessionMode: requestCodeMode });
-        if (!remainder) {
+        if (!action.prompt) {
           setInput("");
           return;
         }
-        text = remainder;
+        text = action.prompt;
+      }
+      if (action?.type === "unknown") {
+        setInput("");
+        const notice: Message = {
+          id: makeId("command"),
+          role: "assistant",
+          content: `Unknown Code command: \`${action.command}\`. Type \`/\` to see available commands.`,
+          createdAt: currentTimestamp(),
+          status: "error",
+        };
+        setState((current) => ({
+          ...current,
+          conversations: current.conversations.map((conversation) =>
+            conversation.id === activeConversation.id
+              ? { ...conversation, messages: [...conversation.messages, notice] }
+              : conversation,
+          ),
+        }));
+        return;
       }
     }
 
@@ -787,6 +894,9 @@ export function BrainwormApp() {
       content: "",
       createdAt: now + 1,
       status: "streaming",
+      codeMode: state.settings.appMode === "code" ? requestCodeMode : undefined,
+      planState:
+        state.settings.appMode === "code" && requestCodeMode === "plan" ? "proposed" : undefined,
     };
     const requestMessages = [
       ...activeConversation.messages
@@ -819,6 +929,7 @@ export function BrainwormApp() {
     const abortController = new AbortController();
     abortRef.current = abortController;
     let accumulated = "";
+    let streamedTools: ToolActivity[] = [];
 
     try {
       const response = await fetch("/api/chat", {
@@ -834,7 +945,7 @@ export function BrainwormApp() {
           mode: state.settings.appMode,
           codeSessionMode: requestCodeMode,
           files: filesForRequest.map(({ name, content }) => ({ name, content })),
-          mcpEnabled: state.settings.mcpEnabled,
+          mcpServers: state.settings.mcpServers,
         }),
         signal: abortController.signal,
       });
@@ -862,19 +973,31 @@ export function BrainwormApp() {
             accumulated += event.delta;
             patchMessage(conversationId, assistantMessage.id, { content: accumulated });
           }
+          if (event.type === "tool") {
+            streamedTools = mergeTools(streamedTools, [event.tool]);
+            patchMessage(conversationId, assistantMessage.id, {
+              tools: streamedTools,
+            });
+          }
           if (event.type === "error") throw new Error(event.message);
           if (event.type === "done") {
             completed = true;
+            streamedTools = mergeTools(streamedTools, event.tools);
             patchMessage(conversationId, assistantMessage.id, {
               status: "complete",
               sources: event.sources,
+              tools: streamedTools,
             });
           }
         }
       }
 
       if (!completed) {
-        patchMessage(conversationId, assistantMessage.id, { status: "complete" });
+        patchMessage(conversationId, assistantMessage.id, {
+          status: accumulated ? "complete" : "error",
+          planState: undefined,
+          content: accumulated || "The response stream ended before the agent completed its turn.",
+        });
       }
       if (accumulated && state.settings.ttsEnabled && state.settings.ttsAutoplay) {
         void autoplayTtsMessage({
@@ -888,7 +1011,10 @@ export function BrainwormApp() {
     } catch (error) {
       if (abortController.signal.aborted) {
         if (accumulated) {
-          patchMessage(conversationId, assistantMessage.id, { status: "complete" });
+          patchMessage(conversationId, assistantMessage.id, {
+            status: "complete",
+            planState: undefined,
+          });
         } else {
           setState((current) => ({
             ...current,
@@ -909,12 +1035,28 @@ export function BrainwormApp() {
         patchMessage(conversationId, assistantMessage.id, {
           content: accumulated || `I hit a stone in the tunnel: ${message}`,
           status: accumulated ? "complete" : "error",
+          planState: undefined,
         });
       }
     } finally {
       abortRef.current = null;
       setStreamingMessageId(null);
     }
+  };
+
+  const approvePlan = (messageId: string) => {
+    if (streamingMessageId) return;
+    patchMessage(activeConversation.id, messageId, { planState: "approved" });
+    updateSettings({ codeSessionMode: "always" });
+    void sendMessage("Implement the approved plan. Complete the work and verify it.", "always");
+  };
+
+  const requestPlanChanges = (messageId: string) => {
+    if (streamingMessageId) return;
+    patchMessage(activeConversation.id, messageId, { planState: "changes_requested" });
+    updateSettings({ codeSessionMode: "plan" });
+    setInput("Revise the plan: ");
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const clearAll = () => {
@@ -996,7 +1138,7 @@ export function BrainwormApp() {
             </span>
             <span className="topbar__persona">
               {state.settings.appMode === "code"
-                ? `Code mode · ${state.settings.codeSessionMode}`
+                ? `Code mode · ${codeModeLabel(state.settings.codeSessionMode)}`
                 : state.settings.appMode === "imagine"
                   ? "Imagine studio"
                   : "Bookworm mode"}
@@ -1040,7 +1182,7 @@ export function BrainwormApp() {
             {state.settings.appMode === "code" && (
               <span>
                 <CodeIcon />
-                Python sandbox
+                {codeModeLabel(state.settings.codeSessionMode)} mode
               </span>
             )}
             {state.settings.appMode === "imagine" && (
@@ -1049,14 +1191,12 @@ export function BrainwormApp() {
                 Grok Imagine
               </span>
             )}
-            {state.settings.appMode === "code" &&
-              state.settings.mcpEnabled &&
-              health?.mcpConfigured && (
-                <span>
-                  <span className="connection-dot is-on" />
-                  {health.mcpLabel} MCP
-                </span>
-              )}
+            {state.settings.appMode === "code" && enabledMcpServers.length > 0 && (
+              <span>
+                <span className="connection-dot is-on" />
+                {enabledMcpServers.length} MCP
+              </span>
+            )}
             <span className={`connection-dot ${hasXaiApiKey ? "is-on" : ""}`} />
             <span>{hasXaiApiKey ? "xAI den ready" : "Key needed"}</span>
           </div>
@@ -1073,6 +1213,8 @@ export function BrainwormApp() {
                   onRegenerate={(messageId) => void regenerateMessage(messageId)}
                   onBranch={branchConversation}
                   onSelectVariant={selectMessageVariant}
+                  onApprovePlan={approvePlan}
+                  onRequestPlanChanges={requestPlanChanges}
                   tts={{
                     enabled: state.settings.ttsEnabled,
                     voice: state.settings.ttsVoice,
@@ -1105,7 +1247,7 @@ export function BrainwormApp() {
               </h2>
               <p className="welcome__copy">
                 {state.settings.appMode === "code"
-                  ? "Connect a workspace over MCP or attach a few source files. Plan, Build, and Verify borrow Grok Build’s disciplined session loop—with explicit tool boundaries."
+                  ? "Connect repository tools over MCP or attach source files. Normal and Plan stay read-only; Always-approve exposes only the write tools you explicitly allow."
                   : state.settings.appMode === "imagine"
                     ? "Generate with Grok Imagine or attach an image and describe the edit. Finished work stays in this browser’s local image library."
                     : "I’m Brainworm—part research companion, part margin scribbler. Bring me a knotty idea and we’ll dig until the roots show."}
@@ -1132,20 +1274,20 @@ export function BrainwormApp() {
             {state.settings.appMode === "code" && (
               <div className="code-modebar">
                 <div className="code-modebar__modes">
-                  {(["build", "plan", "verify"] as const).map((mode) => (
+                  {(["normal", "plan", "always"] as const).map((mode) => (
                     <button
                       key={mode}
                       className={state.settings.codeSessionMode === mode ? "is-on" : ""}
                       onClick={() => updateSettings({ codeSessionMode: mode })}
                     >
-                      {mode === "build" ? (
+                      {mode === "normal" ? (
                         <CodeIcon />
-                      ) : mode === "verify" ? (
+                      ) : mode === "always" ? (
                         <CheckIcon />
                       ) : (
                         <LibraryIcon />
                       )}
-                      {mode}
+                      {codeModeLabel(mode)}
                     </button>
                   ))}
                 </div>
@@ -1286,7 +1428,9 @@ export function BrainwormApp() {
               )}
             <div className="composer__footer">
               <span>
-                {state.settings.appMode === "code" ? `${state.settings.codeSessionMode} · ` : ""}
+                {state.settings.appMode === "code"
+                  ? `${codeModeLabel(state.settings.codeSessionMode)} · `
+                  : ""}
                 {state.settings.appMode === "imagine"
                   ? `${state.settings.imagineModel.endsWith("quality") ? "quality" : "fast"} · ${state.settings.imagineAspectRatio} · `
                   : ""}
@@ -1297,10 +1441,8 @@ export function BrainwormApp() {
                     : "Deep tunnel"}
                 {state.settings.webSearch ? " · web search" : " · local context"}
                 {state.settings.ttsEnabled ? ` · ${state.settings.ttsVoice} voice` : ""}
-                {state.settings.appMode === "code" &&
-                state.settings.mcpEnabled &&
-                health?.mcpConfigured
-                  ? ` · ${health.mcpLabel} MCP`
+                {state.settings.appMode === "code" && enabledMcpServers.length > 0
+                  ? ` · ${enabledMcpServers.length} MCP`
                   : ""}
               </span>
               {(state.settings.appMode === "code" || state.settings.appMode === "imagine") && (
@@ -1621,7 +1763,7 @@ export function BrainwormApp() {
                     <>
                       <SettingSection
                         title="Code grove"
-                        description="A Grok Build-inspired workflow with browser-safe limits and xAI's isolated Python runner."
+                        description="Attach source context or connect HTTPS MCP servers that expose repository tools."
                       >
                         <Toggle
                           checked={state.settings.appMode === "code"}
@@ -1630,37 +1772,132 @@ export function BrainwormApp() {
                         />
                         {state.settings.appMode === "code" && (
                           <>
-                            <div className="mcp-card">
-                              <div className="mcp-card__status">
-                                <span
-                                  className={`connection-dot ${health?.mcpConfigured ? "is-on" : ""}`}
-                                />
-                                <div>
-                                  <b>
-                                    {health?.mcpConfigured
-                                      ? `${health.mcpLabel} workspace ready`
-                                      : "Workspace MCP not configured"}
-                                  </b>
-                                  <small>
-                                    {health?.mcpReadOnlyConfigured
-                                      ? "Plan/Verify read-only policy ready"
-                                      : "Plan/Verify use attached context only"}
-                                  </small>
+                            <div className="mcp-list">
+                              {state.settings.mcpServers.map((server) => (
+                                <div className="mcp-editor" key={server.id}>
+                                  <div className="mcp-editor__header">
+                                    <Toggle
+                                      checked={server.enabled}
+                                      onChange={(enabled) =>
+                                        updateMcpServer(server.id, { enabled })
+                                      }
+                                      label={server.label || "MCP server"}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => removeMcpServer(server.id)}
+                                      aria-label={`Remove ${server.label || "MCP server"}`}
+                                    >
+                                      <TrashIcon />
+                                    </button>
+                                  </div>
+                                  <div className="mcp-editor__grid">
+                                    <label>
+                                      <span>Label</span>
+                                      <input
+                                        value={server.label}
+                                        onChange={(event) =>
+                                          updateMcpServer(server.id, { label: event.target.value })
+                                        }
+                                        placeholder="workspace"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
+                                      />
+                                    </label>
+                                    <label className="is-wide">
+                                      <span>HTTPS MCP URL</span>
+                                      <input
+                                        type="url"
+                                        value={server.url}
+                                        onChange={(event) =>
+                                          updateMcpServer(server.id, { url: event.target.value })
+                                        }
+                                        placeholder="https://mcp.example.com/mcp"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
+                                      />
+                                    </label>
+                                    <label className="is-wide">
+                                      <span>Description</span>
+                                      <input
+                                        value={server.description}
+                                        onChange={(event) =>
+                                          updateMcpServer(server.id, {
+                                            description: event.target.value,
+                                          })
+                                        }
+                                        placeholder="Repository and build tools"
+                                      />
+                                    </label>
+                                    <label className="is-wide">
+                                      <span>Authorization header</span>
+                                      <input
+                                        type="password"
+                                        value={server.authorization}
+                                        onChange={(event) =>
+                                          updateMcpServer(server.id, {
+                                            authorization: event.target.value,
+                                          })
+                                        }
+                                        placeholder="Bearer …"
+                                        autoComplete="off"
+                                      />
+                                    </label>
+                                    <label className="is-wide">
+                                      <span>Read-only tools</span>
+                                      <input
+                                        defaultValue={server.readOnlyTools.join(", ")}
+                                        onBlur={(event) =>
+                                          updateMcpServer(server.id, {
+                                            readOnlyTools: parseCommaList(event.target.value),
+                                          })
+                                        }
+                                        placeholder="read_file, list_files, search_files, git_diff"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
+                                      />
+                                      <small>Used in Normal and Plan modes.</small>
+                                    </label>
+                                    <label className="is-wide">
+                                      <span>Always-approve tools</span>
+                                      <input
+                                        defaultValue={server.allowedTools.join(", ")}
+                                        onBlur={(event) =>
+                                          updateMcpServer(server.id, {
+                                            allowedTools: parseCommaList(event.target.value),
+                                          })
+                                        }
+                                        placeholder="read_file, apply_patch, run_tests"
+                                        autoCapitalize="none"
+                                        spellCheck={false}
+                                      />
+                                      <small>
+                                        Exact tool names; an empty list exposes nothing.
+                                      </small>
+                                    </label>
+                                  </div>
+                                  {server.url && !server.url.startsWith("https://") && (
+                                    <p className="mcp-editor__error">MCP URLs must use HTTPS.</p>
+                                  )}
                                 </div>
-                              </div>
-                              <Toggle
-                                checked={state.settings.mcpEnabled}
-                                onChange={(mcpEnabled) => updateSettings({ mcpEnabled })}
-                                label="Arm MCP tools for requests"
-                                disabled={!health?.mcpConfigured}
-                              />
+                              ))}
+                              <button
+                                type="button"
+                                className="mcp-add"
+                                onClick={addMcpServer}
+                                disabled={state.settings.mcpServers.length >= 8}
+                              >
+                                <PlusIcon />
+                                Add MCP server
+                              </button>
                             </div>
                             <div className="code-safety-note">
                               <CodeIcon />
                               <span>
-                                {state.settings.mcpEnabled && health?.mcpConfigured
-                                  ? "Build may use only the server allowlist. Plan and Verify receive only the read-only allowlist. xAI does not yet support per-call MCP approvals."
-                                  : "Attached files remain read-only context. Add the MCP environment variables to let Brainworm inspect, patch, and verify a real workspace."}
+                                Server definitions and credentials stay in this browser and are sent
+                                through the same-origin chat route only for a Code request. Normal
+                                and Plan expose the read-only list; Always-approve exposes the
+                                explicit write-capable list.
                               </span>
                             </div>
                           </>

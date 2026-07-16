@@ -539,6 +539,120 @@ a:focus-visible {
   font-size: inherit;
 }
 
+.message__code-block {
+  max-width: 100%;
+  margin: 17px 0;
+}
+
+.message__code-toolbar {
+  min-height: 39px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 8px 6px 16px;
+  border: 1px solid var(--line-strong);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  border-radius: 11px 11px 0 0;
+  color: #aaa99d;
+  background: #22231f;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.message__code-toolbar button {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  color: #d8d4c8;
+  background: rgba(255, 255, 255, 0.05);
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+  cursor: pointer;
+}
+
+.message__code-toolbar button:hover {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.message__code-toolbar button svg {
+  width: 13px;
+  height: 13px;
+}
+
+.message__code-block pre {
+  margin: 0;
+  border-top: 0;
+  border-radius: 0 0 11px 11px;
+}
+
+.message__content .hljs-comment,
+.message__content .hljs-quote {
+  color: #8f9487;
+  font-style: italic;
+}
+
+.message__content .hljs-keyword,
+.message__content .hljs-selector-tag,
+.message__content .hljs-literal,
+.message__content .hljs-type {
+  color: #d99776;
+}
+
+.message__content .hljs-title,
+.message__content .hljs-title.function_,
+.message__content .hljs-section {
+  color: #d8c47c;
+}
+
+.message__content .hljs-string,
+.message__content .hljs-attr,
+.message__content .hljs-template-tag,
+.message__content .hljs-template-variable {
+  color: #a9c27f;
+}
+
+.message__content .hljs-number,
+.message__content .hljs-symbol,
+.message__content .hljs-bullet,
+.message__content .hljs-variable,
+.message__content .hljs-variable.constant_ {
+  color: #d9a960;
+}
+
+.message__content .hljs-built_in,
+.message__content .hljs-name,
+.message__content .hljs-selector-class,
+.message__content .hljs-selector-id {
+  color: #83b7ae;
+}
+
+.message__content .hljs-meta,
+.message__content .hljs-doctag,
+.message__content .hljs-regexp,
+.message__content .hljs-link {
+  color: #b6a2cf;
+}
+
+.message__content .hljs-addition {
+  color: #b8cf92;
+  background: rgba(116, 150, 80, 0.14);
+}
+
+.message__content .hljs-deletion {
+  color: #e29a82;
+  background: rgba(169, 88, 59, 0.16);
+}
+
 .message__content table {
   display: block;
   max-width: 100%;

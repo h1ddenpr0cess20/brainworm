@@ -16,11 +16,7 @@ function makeImage(overrides: Partial<GeneratedImageRef> = {}): GeneratedImageRe
   };
 }
 
-function makeConversation(
-  id: string,
-  title: string,
-  images: GeneratedImageRef[][],
-): Conversation {
+function makeConversation(id: string, title: string, images: GeneratedImageRef[][]): Conversation {
   return {
     id,
     title,
@@ -90,8 +86,8 @@ describe("imageFileName", () => {
 describe("imageMeta", () => {
   it("reads quality off the model id", () => {
     expect(imageMeta(makeImage())).toBe("generated · fast · 1k");
-    expect(
-      imageMeta(makeImage({ model: "grok-imagine-image-quality", resolution: "2k" })),
-    ).toBe("generated · quality · 2k");
+    expect(imageMeta(makeImage({ model: "grok-imagine-image-quality", resolution: "2k" }))).toBe(
+      "generated · quality · 2k",
+    );
   });
 });

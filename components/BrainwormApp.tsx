@@ -334,10 +334,14 @@ export function BrainwormApp() {
       );
   }, []);
 
+  const messageCount = activeConversation?.messages.length ?? 0;
   const lastContentLength = activeConversation?.messages.at(-1)?.content.length ?? 0;
   useEffect(() => {
+    // Never scroll the empty welcome screen: on small viewports its content
+    // is taller than the feed and jumping to the bottom cuts off the top.
+    if (!messageCount) return;
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
-  }, [activeConversation?.id, lastContentLength]);
+  }, [activeConversation?.id, messageCount, lastContentLength]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -345,6 +349,13 @@ export function BrainwormApp() {
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(textarea.scrollHeight, 176)}px`;
   }, [input]);
+
+  const focusComposer = () => {
+    // Focusing would pop the on-screen keyboard on touch devices; only
+    // autofocus where a hardware pointer and keyboard are the norm.
+    if (!window.matchMedia("(hover: hover) and (pointer: fine)").matches) return;
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  };
 
   const updateSettings = (patch: Partial<BrainwormSettings>) => {
     setState((current) => ({
@@ -370,7 +381,7 @@ export function BrainwormApp() {
     if (appMode !== "code") setPendingFiles([]);
     if (appMode !== "imagine") setPendingImage(null);
     setPanel(null);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const cycleCodeMode = () => {
@@ -461,7 +472,7 @@ export function BrainwormApp() {
     setInput("");
     setPendingFiles([]);
     setPendingImage(null);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const selectConversation = (id: string) => {
@@ -547,7 +558,7 @@ export function BrainwormApp() {
     setInput("");
     setPendingFiles([]);
     setPendingImage(null);
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const regenerateMessage = async (messageId: string) => {
@@ -1085,7 +1096,7 @@ export function BrainwormApp() {
     patchMessage(activeConversation.id, messageId, { planState: "changes_requested" });
     updateSettings({ codeSessionMode: "plan" });
     setInput("Revise the plan: ");
-    window.setTimeout(() => textareaRef.current?.focus(), 0);
+    focusComposer();
   };
 
   const clearAll = () => {

@@ -17,6 +17,22 @@ Brainworm is a Next.js app with three native xAI workspaces wrapped in a compact
 - 🌿 **Code** — Normal, Plan, and Always-approve session modes, attached source context, user-configured HTTPS MCP workspaces, structured tool activity, and plan approval before implementation.
 - 🎨 **Imagine** — Grok Imagine generation and editing with fast or quality models, aspect ratios, 1K/2K output, and a local image library.
 
+## Screenshots
+
+|                                 Chat · Parchment                                  |                               Chat · Night soil                               |
+| :-------------------------------------------------------------------------------: | :---------------------------------------------------------------------------: |
+| ![Chat workspace in the parchment theme](docs/screenshots/desktop-chat-paper.png) | ![Chat workspace in the night theme](docs/screenshots/desktop-chat-night.png) |
+
+|                                     Code grove · Night soil                                      |                               Imagine studio · Parchment                                |
+| :----------------------------------------------------------------------------------------------: | :-------------------------------------------------------------------------------------: |
+| ![Code workspace with session modes in the night theme](docs/screenshots/desktop-code-night.png) | ![Imagine workspace in the parchment theme](docs/screenshots/desktop-imagine-paper.png) |
+
+<p align="center">
+  <img src="docs/screenshots/mobile-chat-paper.png" alt="Chat workspace on mobile in the parchment theme" width="280">
+  &nbsp;&nbsp;
+  <img src="docs/screenshots/mobile-imagine-night.png" alt="Imagine workspace on mobile in the night theme" width="280">
+</p>
+
 ## Getting started
 
 Requires Node.js 22 or newer (`.nvmrc` is included).

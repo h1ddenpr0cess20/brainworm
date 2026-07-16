@@ -11,6 +11,11 @@ export type Source = {
   url: string;
 };
 
+export type MessageVariant = {
+  content: string;
+  sources?: Source[];
+};
+
 export type Message = {
   id: string;
   role: MessageRole;
@@ -20,6 +25,9 @@ export type Message = {
   sources?: Source[];
   attachments?: string[];
   images?: GeneratedImageRef[];
+  /** Every completed version of a regenerated assistant reply, oldest first. */
+  variants?: MessageVariant[];
+  variantIndex?: number;
 };
 
 export type GeneratedImageRef = {

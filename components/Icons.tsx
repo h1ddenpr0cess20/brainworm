@@ -31,7 +31,13 @@ export const SettingsIcon = (props: IconProps) => (
   <Icon {...props}><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1-2.9 2.9-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5v.1h-4v-.1a1.7 1.7 0 00-1-1.5 1.7 1.7 0 00-1.8.3l-.1.1-2.9-2.9.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3v-4h.1a1.7 1.7 0 001.5-1 1.7 1.7 0 00-.3-1.8l-.1-.1 2.9-2.9.1.1a1.7 1.7 0 001.8.3 1.7 1.7 0 001-1.5V3h4v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1 2.9 2.9-.1.1a1.7 1.7 0 00-.3 1.8 1.7 1.7 0 001.5 1h.1v4h-.1a1.7 1.7 0 00-1.5 1z" /></Icon>
 );
 export const SendIcon = (props: IconProps) => (
-  <Icon {...props}><path d="M22 2L9.7 14.3" /><path d="M22 2l-7.8 20-4.5-7.7L2 9.8 22 2z" /></Icon>
+  <Icon {...props}><path d="M22 12L3 4.5l3.4 7.5L3 19.5 22 12z" /><path d="M6.4 12H22" /></Icon>
+);
+export const RegenerateIcon = (props: IconProps) => (
+  <Icon {...props}><path d="M21 2v6h-6" /><path d="M3 12a9 9 0 0115-6.7L21 8" /><path d="M3 22v-6h6" /><path d="M21 12a9 9 0 01-15 6.7L3 16" /></Icon>
+);
+export const BranchIcon = (props: IconProps) => (
+  <Icon {...props}><circle cx="6" cy="4" r="2" /><circle cx="6" cy="20" r="2" /><circle cx="18" cy="12" r="2" /><path d="M6 6v12M6 12h6a4 4 0 004-4V6" /></Icon>
 );
 export const StopIcon = (props: IconProps) => (
   <Icon {...props}><rect x="6" y="6" width="12" height="12" rx="2" /></Icon>

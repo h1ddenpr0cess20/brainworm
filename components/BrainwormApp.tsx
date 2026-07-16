@@ -6,7 +6,9 @@ import type {
   Conversation,
   GeneratedImageRef,
   Message,
+  MessageVariant,
   PersistedState,
+  Source,
   StreamEvent,
   TtsVoice,
 } from "@/lib/types";
@@ -36,6 +38,7 @@ import {
 } from "./Icons";
 
 type Panel = "history" | "settings" | null;
+type SettingsTab = "model" | "tools" | "voice" | "workspaces" | "theme" | "data";
 type Health = {
   configured: boolean;
   model: string;
@@ -153,6 +156,7 @@ export function BrainwormApp() {
   const [state, setState] = useState<PersistedState>(() => makeInitialState());
   const [hydrated, setHydrated] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("model");
   const [input, setInput] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -296,7 +300,15 @@ export function BrainwormApp() {
 
   const deleteConversation = (id: string) => {
     const removed = state.conversations.find((conversation) => conversation.id === id);
-    const imageIds = removed?.messages.flatMap((message) => message.images?.map((image) => image.id) ?? []) ?? [];
+    const retainedImageIds = new Set(
+      state.conversations
+        .filter((conversation) => conversation.id !== id)
+        .flatMap((conversation) => conversation.messages)
+        .flatMap((message) => message.images?.map((image) => image.id) ?? []),
+    );
+    const imageIds = removed?.messages
+      .flatMap((message) => message.images?.map((image) => image.id) ?? [])
+      .filter((imageId) => !retainedImageIds.has(imageId)) ?? [];
     void Promise.all(imageIds.map((imageId) => deleteImageBlob(imageId)));
     setState((current) => {
       const remaining = current.conversations.filter((item) => item.id !== id);
@@ -329,6 +341,210 @@ export function BrainwormApp() {
           : conversation,
       ),
     }));
+  };
+
+  const selectMessageVariant = (messageId: string, index: number) => {
+    stopTtsMessage(messageId);
+    setState((current) => ({
+      ...current,
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === current.activeConversationId
+          ? {
+              ...conversation,
+              messages: conversation.messages.map((message) => {
+                if (message.id !== messageId) return message;
+                const variant = message.variants?.[index];
+                return variant
+                  ? {
+                      ...message,
+                      content: variant.content,
+                      sources: variant.sources,
+                      variantIndex: index,
+                      status: "complete" as const,
+                    }
+                  : message;
+              }),
+            }
+          : conversation,
+      ),
+    }));
+  };
+
+  const branchConversation = (messageId: string) => {
+    if (!activeConversation || streamingMessageId) return;
+    const cut = activeConversation.messages.findIndex((message) => message.id === messageId);
+    if (cut < 0) return;
+    stopTtsMessage();
+    const now = Date.now();
+    const branch: Conversation = {
+      id: makeId("thread"),
+      title: `${activeConversation.title} (branch)`.slice(0, 60),
+      createdAt: now,
+      updatedAt: now,
+      messages: activeConversation.messages.slice(0, cut + 1).map((message) => ({
+        ...message,
+        id: makeId(message.role === "user" ? "user" : "worm"),
+        attachments: message.attachments ? [...message.attachments] : undefined,
+        sources: message.sources?.map((source) => ({ ...source })),
+        images: message.images?.map((image) => ({ ...image })),
+        variants: message.variants?.map((variant) => ({
+          ...variant,
+          sources: variant.sources?.map((source) => ({ ...source })),
+        })),
+      })),
+    };
+    setState((current) => ({
+      ...current,
+      activeConversationId: branch.id,
+      conversations: [branch, ...current.conversations],
+    }));
+    setPanel(null);
+    setInput("");
+    setPendingFiles([]);
+    setPendingImage(null);
+    window.setTimeout(() => textareaRef.current?.focus(), 0);
+  };
+
+  const regenerateMessage = async (messageId: string) => {
+    if (!activeConversation || streamingMessageId || state.settings.appMode === "imagine") return;
+    const messageIndex = activeConversation.messages.findIndex((message) => message.id === messageId);
+    const target = activeConversation.messages[messageIndex];
+    if (!target || target.role !== "assistant" || target.images?.length) return;
+
+    const conversationId = activeConversation.id;
+    const visibleSnapshot: MessageVariant = { content: target.content, sources: target.sources };
+    const variants = target.variants?.length ? target.variants : [visibleSnapshot];
+    const restoreIndex = target.variants?.length
+      ? Math.min(target.variantIndex ?? variants.length - 1, variants.length - 1)
+      : 0;
+    const requestMessages = activeConversation.messages
+      .slice(0, messageIndex)
+      .filter((message) => message.status === "complete" && message.content)
+      .map(({ role, content }) => ({ role, content }));
+
+    patchMessage(conversationId, messageId, {
+      content: "",
+      sources: undefined,
+      status: "streaming",
+      variants,
+      variantIndex: undefined,
+    });
+    setStreamingMessageId(messageId);
+    stopTtsMessage(messageId);
+
+    const abortController = new AbortController();
+    abortRef.current = abortController;
+    let accumulated = "";
+    let finalSources: Source[] = [];
+    let completed = false;
+
+    const finishVariant = (content: string, sources: Source[]) => {
+      setState((current) => ({
+        ...current,
+        conversations: current.conversations.map((conversation) =>
+          conversation.id === conversationId
+            ? {
+                ...conversation,
+                updatedAt: Date.now(),
+                messages: conversation.messages.map((message) => {
+                  if (message.id !== messageId) return message;
+                  const nextVariants = [...(message.variants ?? variants), { content, sources }];
+                  return {
+                    ...message,
+                    content,
+                    sources,
+                    status: "complete" as const,
+                    variants: nextVariants,
+                    variantIndex: nextVariants.length - 1,
+                  };
+                }),
+              }
+            : conversation,
+        ),
+      }));
+    };
+
+    try {
+      const response = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          messages: requestMessages,
+          reasoningEffort: state.settings.reasoningEffort,
+          webSearch: state.settings.webSearch,
+          mode: state.settings.appMode,
+          codeSessionMode: state.settings.codeSessionMode,
+          files: [],
+          mcpEnabled: state.settings.mcpEnabled,
+        }),
+        signal: abortController.signal,
+      });
+      if (!response.ok || !response.body) {
+        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(payload?.error ?? `The request failed (${response.status}).`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as StreamEvent;
+          if (event.type === "delta") {
+            accumulated += event.delta;
+            patchMessage(conversationId, messageId, { content: accumulated });
+          }
+          if (event.type === "error") throw new Error(event.message);
+          if (event.type === "done") {
+            completed = true;
+            finalSources = event.sources;
+          }
+        }
+      }
+      if (!completed) finalSources = [];
+      if (!accumulated) {
+        const restored = variants[restoreIndex] ?? visibleSnapshot;
+        patchMessage(conversationId, messageId, {
+          content: restored.content,
+          sources: restored.sources,
+          status: "complete",
+          variants,
+          variantIndex: restoreIndex,
+        });
+        return;
+      }
+      finishVariant(accumulated, finalSources);
+      if (accumulated && state.settings.ttsEnabled && state.settings.ttsAutoplay) {
+        void autoplayTtsMessage({
+          messageId,
+          text: accumulated,
+          voice: state.settings.ttsVoice,
+          speed: state.settings.ttsSpeed,
+        });
+      }
+    } catch (error) {
+      if (accumulated) {
+        finishVariant(accumulated, finalSources);
+      } else {
+        const restored = variants[restoreIndex] ?? visibleSnapshot;
+        patchMessage(conversationId, messageId, {
+          content: restored.content,
+          sources: restored.sources,
+          status: abortController.signal.aborted ? "complete" : "error",
+          variants,
+          variantIndex: restoreIndex,
+        });
+      }
+    } finally {
+      abortRef.current = null;
+      setStreamingMessageId(null);
+    }
   };
 
   const useLatestImage = async () => {
@@ -715,6 +931,10 @@ export function BrainwormApp() {
                 <ChatMessage
                   key={message.id}
                   message={message}
+                  busy={Boolean(streamingMessageId)}
+                  onRegenerate={(messageId) => void regenerateMessage(messageId)}
+                  onBranch={branchConversation}
+                  onSelectVariant={selectMessageVariant}
                   tts={{
                     enabled: state.settings.ttsEnabled,
                     voice: state.settings.ttsVoice,
@@ -906,7 +1126,26 @@ export function BrainwormApp() {
                 </div>
               </div>
             ) : (
-              <div className="settings-panel">
+              <div className="settings-shell">
+                <nav className="settings-tabs" aria-label="Settings sections">
+                  {([
+                    ["model", "Model"],
+                    ["tools", "Tools"],
+                    ["voice", "Voice"],
+                    ["workspaces", "Workspaces"],
+                    ["theme", "Theme"],
+                    ["data", "Data"],
+                  ] as const).map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      className={settingsTab === tab ? "is-active" : ""}
+                      onClick={() => setSettingsTab(tab)}
+                      aria-current={settingsTab === tab ? "page" : undefined}
+                    >{label}</button>
+                  ))}
+                </nav>
+                <div className="settings-panel">
+                {settingsTab === "model" && (<>
                 <SettingSection title="Connection" description="The key stays on your server, never in the reader's browser.">
                   <div className="connection-card">
                     <span className={`connection-dot ${health?.configured ? "is-on" : ""}`} />
@@ -924,11 +1163,15 @@ export function BrainwormApp() {
                     ))}
                   </div>
                 </SettingSection>
+                </>)}
 
+                {settingsTab === "tools" && (
                 <SettingSection title="Surface scout" description="Let xAI search the live web and return citation breadcrumbs.">
                   <Toggle checked={state.settings.webSearch} onChange={(webSearch) => updateSettings({ webSearch })} label="Use native web search" />
                 </SettingSection>
+                )}
 
+                {settingsTab === "voice" && (
                 <SettingSection title="Reading voice" description="Wordmark-style xAI playback with local audio caching, autoplay, and per-message controls.">
                   <Toggle
                     checked={state.settings.ttsEnabled}
@@ -974,7 +1217,9 @@ export function BrainwormApp() {
                     </div>
                   )}
                 </SettingSection>
+                )}
 
+                {settingsTab === "workspaces" && (<>
                 <SettingSection title="Code grove" description="A Grok Build-inspired workflow with browser-safe limits and xAI's isolated Python runner.">
                   <Toggle checked={state.settings.appMode === "code"} onChange={(enabled) => setAppMode(enabled ? "code" : "chat")} label="Enable coding workspace" />
                   {state.settings.appMode === "code" && (
@@ -1012,17 +1257,23 @@ export function BrainwormApp() {
                     <span>{state.settings.imagineModel.endsWith("quality") ? "Quality" : "Fast"} · {state.settings.imagineResolution.toUpperCase()} · {state.settings.imagineAspectRatio}</span>
                   </div>
                 </SettingSection>
+                </>)}
 
+                {settingsTab === "theme" && (
                 <SettingSection title="Reading light" description="Both palettes stay rooted in moss, clay, bark, and paper.">
                   <div className="theme-choice">
                     <button className={state.settings.theme === "paper" ? "is-on" : ""} onClick={() => updateSettings({ theme: "paper" })}><SunIcon />Parchment</button>
                     <button className={state.settings.theme === "night" ? "is-on" : ""} onClick={() => updateSettings({ theme: "night" })}><MoonIcon />Night soil</button>
                   </div>
                 </SettingSection>
+                )}
 
+                {settingsTab === "data" && (
                 <SettingSection title="Local library" description="Threads are stored only in this browser. xAI storage is disabled for API calls.">
                   <button className="danger-button" onClick={clearAll}><TrashIcon />Clear every thread</button>
                 </SettingSection>
+                )}
+                </div>
               </div>
             )}
           </aside>

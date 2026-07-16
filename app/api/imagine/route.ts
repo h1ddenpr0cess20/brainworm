@@ -1,4 +1,11 @@
-import type { ImagineModel } from "@/lib/types";
+import {
+  buildImagineAgentTools,
+  extractImagineFunctionCall,
+  extractImagineSources,
+  extractImagineTools,
+  IMAGINE_AGENT_PROMPT,
+} from "@/lib/imagineAgent";
+import type { ImagineModel, MessageRole, ReasoningEffort } from "@/lib/types";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 
 export const runtime = "nodejs";
@@ -30,9 +37,14 @@ type ImagineRequest = {
   resolution?: unknown;
   count?: unknown;
   sourceImage?: unknown;
+  webSearch?: unknown;
+  reasoningEffort?: unknown;
+  messages?: unknown;
 };
 
 type XaiImageItem = { b64_json?: unknown; url?: unknown; mime_type?: unknown };
+type AgentMessage = { role: MessageRole; content: string };
+type XaiAgentResponse = { output?: unknown[] };
 
 export async function POST(request: Request): Promise<Response> {
   const apiKey = readXaiApiKey(request);
@@ -63,6 +75,12 @@ export async function POST(request: Request): Promise<Response> {
     /^data:image\/(png|jpe?g|webp);base64,/i.test(body.sourceImage)
       ? body.sourceImage
       : null;
+  const webSearch = body.webSearch === true;
+  const reasoningEffort: ReasoningEffort =
+    body.reasoningEffort === "low" || body.reasoningEffort === "high"
+      ? body.reasoningEffort
+      : "medium";
+  const messages = validateMessages(body.messages);
 
   if (!prompt || prompt.length > 8_000) {
     return Response.json(
@@ -80,9 +98,45 @@ export async function POST(request: Request): Promise<Response> {
     return Response.json({ error: "The source image is too large." }, { status: 413 });
   }
 
+  if (messages === null) {
+    return Response.json({ error: "Imagine history is not valid." }, { status: 400 });
+  }
+
+  const agentResponse = await fetch("https://api.x.ai/v1/responses", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: process.env.XAI_MODEL || "grok-4.5",
+      input: [
+        { role: "system", content: IMAGINE_AGENT_PROMPT },
+        ...messages,
+        { role: "user", content: prompt },
+      ],
+      reasoning: { effort: reasoningEffort },
+      tools: buildImagineAgentTools({ edit: Boolean(sourceImage), webSearch }),
+      include: webSearch ? ["web_search_call.action.sources"] : undefined,
+      store: false,
+    }),
+    cache: "no-store",
+  });
+
+  if (!agentResponse.ok) {
+    const error = await readError(agentResponse);
+    return Response.json(
+      { error: error || `Grok could not prepare the image request (${agentResponse.status}).` },
+      { status: agentResponse.status === 429 ? 429 : 502 },
+    );
+  }
+
+  const agentResult = (await agentResponse.json()) as XaiAgentResponse;
+  const functionCall = extractImagineFunctionCall(agentResult.output, Boolean(sourceImage));
+  const usedPrompt = functionCall?.prompt || prompt;
+  const sources = extractImagineSources(agentResult.output);
+  const tools = extractImagineTools(agentResult.output, functionCall);
+
   const payload: Record<string, unknown> = {
     model,
-    prompt,
+    prompt: usedPrompt,
     n: count,
     response_format: "b64_json",
     aspect_ratio: aspectRatio,
@@ -109,22 +163,67 @@ export async function POST(request: Request): Promise<Response> {
   }
 
   const result = (await upstream.json()) as { data?: XaiImageItem[] };
-  const images = (result.data ?? []).flatMap((item) => {
-    if (typeof item.b64_json !== "string" || !item.b64_json) return [];
-    return [
-      {
-        b64: item.b64_json,
-        mimeType: typeof item.mime_type === "string" ? item.mime_type : "image/jpeg",
-      },
-    ];
-  });
+  const images = (
+    await Promise.all((result.data ?? []).map((item) => materializeImage(item)))
+  ).filter((item): item is { b64: string; mimeType: string } => item !== null);
   if (!images.length)
     return Response.json({ error: "Grok Imagine returned no embeddable images." }, { status: 502 });
 
   return Response.json(
-    { images, model, aspectRatio, resolution, kind: sourceImage ? "edited" : "generated" },
+    {
+      images,
+      model,
+      aspectRatio,
+      resolution,
+      kind: sourceImage ? "edited" : "generated",
+      usedPrompt,
+      sources,
+      tools,
+    },
     { headers: { "Cache-Control": "private, no-store" } },
   );
+}
+
+function validateMessages(value: unknown): AgentMessage[] | null {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > 24) return null;
+  let total = 0;
+  const messages: AgentMessage[] = [];
+  for (const message of value) {
+    if (!message || typeof message !== "object") return null;
+    const record = message as Record<string, unknown>;
+    if (record.role !== "user" && record.role !== "assistant") return null;
+    if (typeof record.content !== "string" || !record.content.trim()) return null;
+    total += record.content.length;
+    if (total > 60_000) return null;
+    messages.push({ role: record.role, content: record.content });
+  }
+  return messages;
+}
+
+async function materializeImage(
+  item: XaiImageItem,
+): Promise<{ b64: string; mimeType: string } | null> {
+  if (typeof item.b64_json === "string" && item.b64_json) {
+    return {
+      b64: item.b64_json,
+      mimeType: typeof item.mime_type === "string" ? item.mime_type : "image/jpeg",
+    };
+  }
+  if (typeof item.url !== "string" || !item.url.startsWith("https://")) return null;
+  const response = await fetch(item.url, { cache: "no-store" });
+  if (!response.ok) return null;
+  const size = Number(response.headers.get("content-length") || 0);
+  if (size > 20_000_000) return null;
+  const bytes = await response.arrayBuffer();
+  if (bytes.byteLength > 20_000_000) return null;
+  return {
+    b64: Buffer.from(bytes).toString("base64"),
+    mimeType:
+      typeof item.mime_type === "string"
+        ? item.mime_type
+        : response.headers.get("content-type") || "image/jpeg",
+  };
 }
 
 async function readError(response: Response): Promise<string> {

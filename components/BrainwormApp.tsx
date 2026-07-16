@@ -109,17 +109,17 @@ const WORDMARK_XAI_VOICES: TtsVoice[] = [
 ].map((voiceId) => ({ voiceId, name: voiceId[0].toUpperCase() + voiceId.slice(1) }));
 
 const STARTERS = [
-  "Explain a hard idea with a good analogy",
-  "Help me untangle a project plan",
-  "Recommend a strange, wonderful book",
-  "Dig into the latest research on a topic",
+  "Explain quantum entanglement to a curious 12-year-old",
+  "Plan a two-week portfolio launch with 90 minutes per weekday",
+  "Recommend five surreal novels under 300 pages",
+  "Compare SQLite and PostgreSQL for a small SaaS app",
 ];
 
 const CODE_STARTERS = [
-  "Explain the architecture of these files",
-  "Find the bug and return a minimal patch",
-  "Plan this feature before writing code",
-  "Review this code for correctness and security",
+  "Build a TypeScript debounce function with Vitest tests",
+  "Fix this JavaScript bug: ['10', '2', '1'].sort() returns the wrong order",
+  "Plan a REST API for a personal bookmark manager",
+  "Secure an Express login endpoint against brute-force attacks",
 ];
 
 const IMAGINE_STARTERS = [
@@ -677,6 +677,15 @@ export function BrainwormApp() {
     const now = currentTimestamp();
     const conversationId = activeConversation.id;
     const sourceImage = pendingImage;
+    const imagineHistory = activeConversation.messages
+      .filter(
+        (message): message is Message & { role: "user" | "assistant" } =>
+          (message.role === "user" || message.role === "assistant") &&
+          message.status === "complete" &&
+          Boolean(message.content.trim()),
+      )
+      .slice(-24)
+      .map(({ role, content }) => ({ role, content }));
     const userMessage: Message = {
       id: makeId("user"),
       role: "user",
@@ -731,6 +740,9 @@ export function BrainwormApp() {
           resolution: state.settings.imagineResolution,
           count: state.settings.imagineCount,
           sourceImage: sourceImage?.dataUrl,
+          webSearch: state.settings.webSearch,
+          reasoningEffort: state.settings.reasoningEffort,
+          messages: imagineHistory,
         }),
         signal: abortController.signal,
       });
@@ -741,6 +753,9 @@ export function BrainwormApp() {
         aspectRatio?: string;
         resolution?: "1k" | "2k";
         kind?: "generated" | "edited";
+        usedPrompt?: string;
+        sources?: Source[];
+        tools?: ToolActivity[];
       };
       if (!response.ok || !payload.images?.length)
         throw new Error(payload.error || "Grok Imagine returned no images.");
@@ -751,7 +766,7 @@ export function BrainwormApp() {
           await saveImageBlob(id, base64ToBlob(image.b64, image.mimeType));
           return {
             id,
-            prompt,
+            prompt: payload.usedPrompt ?? prompt,
             mimeType: image.mimeType,
             model: payload.model ?? state.settings.imagineModel,
             aspectRatio: payload.aspectRatio ?? state.settings.imagineAspectRatio,
@@ -768,6 +783,8 @@ export function BrainwormApp() {
             : `I found ${images.length} variations between the pages.`,
         status: "complete",
         images,
+        sources: payload.sources,
+        tools: payload.tools,
       });
     } catch (error) {
       if (abortController.signal.aborted) {

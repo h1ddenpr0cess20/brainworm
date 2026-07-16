@@ -32,14 +32,18 @@ Session modes:
 Slash-command ideas such as /plan, /verify, /effort, /search, and /new are handled by the Brainworm UI. Do not pretend they are executable shell commands.`;
 
 export function codingModeInstruction(mode: "build" | "plan" | "verify"): string {
-  if (mode === "plan") return "The active session mode is PLAN. Planning only; do not write implementation code.";
-  if (mode === "verify") return "The active session mode is VERIFY. Review the supplied code or proposal and report findings first.";
+  if (mode === "plan")
+    return "The active session mode is PLAN. Planning only; do not write implementation code.";
+  if (mode === "verify")
+    return "The active session mode is VERIFY. Review the supplied code or proposal and report findings first.";
   return "The active session mode is BUILD. Produce implementation-ready code or patches after understanding the context.";
 }
 
 export function mcpModeInstruction(enabled: boolean, readOnly: boolean): string {
-  if (!enabled) return "No workspace MCP server is available for this turn. Work only from supplied context.";
-  if (readOnly) return "A workspace MCP server is available with a read-only tool allowlist. Do not attempt writes.";
+  if (!enabled)
+    return "No workspace MCP server is available for this turn. Work only from supplied context.";
+  if (readOnly)
+    return "A workspace MCP server is available with a read-only tool allowlist. Do not attempt writes.";
   return "A workspace MCP server is armed for this turn. You may use only its exposed tools and must verify every mutation.";
 }
 

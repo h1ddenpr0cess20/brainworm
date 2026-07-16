@@ -1,0 +1,11 @@
+services:
+  brainworm:
+    build:
+      context: .
+    image: brainworm:local
+    init: true
+    restart: unless-stopped
+    env_file:
+      - .env.local
+    ports:
+      - "3000:3000"

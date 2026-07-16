@@ -12,7 +12,9 @@ export async function saveImageBlob(id: string, blob: Blob): Promise<void> {
 
 export async function loadImageBlob(id: string): Promise<Blob | null> {
   const database = await openDatabase();
-  const result = await transactionPromise<Blob | undefined>(database, "readonly", (store) => store.get(id));
+  const result = await transactionPromise<Blob | undefined>(database, "readonly", (store) =>
+    store.get(id),
+  );
   database.close();
   return result ?? null;
 }
@@ -40,7 +42,8 @@ function openDatabase(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DATABASE_NAME, DATABASE_VERSION);
     request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
+      if (!request.result.objectStoreNames.contains(STORE_NAME))
+        request.result.createObjectStore(STORE_NAME);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error ?? new Error("Could not open the image library."));

@@ -13,8 +13,20 @@ import type {
   TtsVoice,
 } from "@/lib/types";
 import { makeConversationTitle } from "@/lib/prompt";
+import {
+  appendMessageVariant,
+  branchFromMessage,
+  selectMessageVariant as selectVariant,
+  snapshotMessage,
+} from "@/lib/conversations";
 import { loadState, saveState } from "@/lib/storage";
-import { base64ToBlob, clearImageBlobs, deleteImageBlob, loadImageBlob, saveImageBlob } from "@/lib/imageStorage";
+import {
+  base64ToBlob,
+  clearImageBlobs,
+  deleteImageBlob,
+  loadImageBlob,
+  saveImageBlob,
+} from "@/lib/imageStorage";
 import { autoplayTtsMessage, clearTtsCache, playTtsMessage, stopTtsMessage } from "@/lib/ttsClient";
 import { BrainLogo } from "./BrainLogo";
 import { ChatMessage } from "./ChatMessage";
@@ -69,9 +81,32 @@ const DEFAULT_SETTINGS: BrainwormSettings = {
 // Wordmark's current xAI catalog is the resilient fallback; the live API
 // replaces it when /v1/tts/voices is available.
 const WORDMARK_XAI_VOICES: TtsVoice[] = [
-  "eve", "ara", "leo", "rex", "sal", "altair", "atlas", "carina", "castor",
-  "celeste", "cosmo", "helios", "helix", "iris", "kepler", "lumen", "luna",
-  "lux", "naksh", "orion", "perseus", "rigel", "sirius", "ursa", "zagan", "zenith",
+  "eve",
+  "ara",
+  "leo",
+  "rex",
+  "sal",
+  "altair",
+  "atlas",
+  "carina",
+  "castor",
+  "celeste",
+  "cosmo",
+  "helios",
+  "helix",
+  "iris",
+  "kepler",
+  "lumen",
+  "luna",
+  "lux",
+  "naksh",
+  "orion",
+  "perseus",
+  "rigel",
+  "sirius",
+  "ursa",
+  "zagan",
+  "zenith",
 ].map((voiceId) => ({ voiceId, name: voiceId[0].toUpperCase() + voiceId.slice(1) }));
 
 const STARTERS = [
@@ -108,6 +143,10 @@ const CODE_COMMANDS = [
 
 function makeId(prefix: string): string {
   return `${prefix}_${crypto.randomUUID()}`;
+}
+
+function currentTimestamp(): number {
+  return Date.now();
 }
 
 function makeConversation(): Conversation {
@@ -174,15 +213,24 @@ export function BrainwormApp() {
     state.conversations[0];
 
   useEffect(() => {
+    let cancelled = false;
     const saved = loadState();
-    if (saved) setState(repairPersistedState(saved));
-    setHydrated(true);
+    queueMicrotask(() => {
+      if (cancelled) return;
+      if (saved) setState(repairPersistedState(saved));
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
     if (!health?.configured) return;
     void fetch("/api/tts/voices", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() as Promise<{ voices: TtsVoice[] }> : null)
+      .then((response) =>
+        response.ok ? (response.json() as Promise<{ voices: TtsVoice[] }>) : null,
+      )
       .then((payload) => {
         if (payload?.voices.length) setTtsVoices(payload.voices);
       })
@@ -201,13 +249,15 @@ export function BrainwormApp() {
     void fetch("/api/health", { cache: "no-store" })
       .then((response) => response.json() as Promise<Health>)
       .then(setHealth)
-      .catch(() => setHealth({
-        configured: false,
-        model: "grok-4.5",
-        mcpConfigured: false,
-        mcpLabel: null,
-        mcpReadOnlyConfigured: false,
-      }));
+      .catch(() =>
+        setHealth({
+          configured: false,
+          model: "grok-4.5",
+          mcpConfigured: false,
+          mcpLabel: null,
+          mcpReadOnlyConfigured: false,
+        }),
+      );
   }, []);
 
   const lastContentLength = activeConversation?.messages.at(-1)?.content.length ?? 0;
@@ -261,7 +311,12 @@ export function BrainwormApp() {
 
   const addImage = async (files: FileList | null) => {
     const file = files?.[0];
-    if (!file || !["image/png", "image/jpeg", "image/webp"].includes(file.type) || file.size > 10_000_000) return;
+    if (
+      !file ||
+      !["image/png", "image/jpeg", "image/webp"].includes(file.type) ||
+      file.size > 10_000_000
+    )
+      return;
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(String(reader.result));
@@ -306,9 +361,10 @@ export function BrainwormApp() {
         .flatMap((conversation) => conversation.messages)
         .flatMap((message) => message.images?.map((image) => image.id) ?? []),
     );
-    const imageIds = removed?.messages
-      .flatMap((message) => message.images?.map((image) => image.id) ?? [])
-      .filter((imageId) => !retainedImageIds.has(imageId)) ?? [];
+    const imageIds =
+      removed?.messages
+        .flatMap((message) => message.images?.map((image) => image.id) ?? [])
+        .filter((imageId) => !retainedImageIds.has(imageId)) ?? [];
     void Promise.all(imageIds.map((imageId) => deleteImageBlob(imageId)));
     setState((current) => {
       const remaining = current.conversations.filter((item) => item.id !== id);
@@ -322,11 +378,7 @@ export function BrainwormApp() {
     });
   };
 
-  const patchMessage = (
-    conversationId: string,
-    messageId: string,
-    patch: Partial<Message>,
-  ) => {
+  const patchMessage = (conversationId: string, messageId: string, patch: Partial<Message>) => {
     setState((current) => ({
       ...current,
       conversations: current.conversations.map((conversation) =>
@@ -353,16 +405,7 @@ export function BrainwormApp() {
               ...conversation,
               messages: conversation.messages.map((message) => {
                 if (message.id !== messageId) return message;
-                const variant = message.variants?.[index];
-                return variant
-                  ? {
-                      ...message,
-                      content: variant.content,
-                      sources: variant.sources,
-                      variantIndex: index,
-                      status: "complete" as const,
-                    }
-                  : message;
+                return selectVariant(message, index);
               }),
             }
           : conversation,
@@ -372,27 +415,9 @@ export function BrainwormApp() {
 
   const branchConversation = (messageId: string) => {
     if (!activeConversation || streamingMessageId) return;
-    const cut = activeConversation.messages.findIndex((message) => message.id === messageId);
-    if (cut < 0) return;
+    const branch = branchFromMessage(activeConversation, messageId, makeId);
+    if (!branch) return;
     stopTtsMessage();
-    const now = Date.now();
-    const branch: Conversation = {
-      id: makeId("thread"),
-      title: `${activeConversation.title} (branch)`.slice(0, 60),
-      createdAt: now,
-      updatedAt: now,
-      messages: activeConversation.messages.slice(0, cut + 1).map((message) => ({
-        ...message,
-        id: makeId(message.role === "user" ? "user" : "worm"),
-        attachments: message.attachments ? [...message.attachments] : undefined,
-        sources: message.sources?.map((source) => ({ ...source })),
-        images: message.images?.map((image) => ({ ...image })),
-        variants: message.variants?.map((variant) => ({
-          ...variant,
-          sources: variant.sources?.map((source) => ({ ...source })),
-        })),
-      })),
-    };
     setState((current) => ({
       ...current,
       activeConversationId: branch.id,
@@ -407,12 +432,14 @@ export function BrainwormApp() {
 
   const regenerateMessage = async (messageId: string) => {
     if (!activeConversation || streamingMessageId || state.settings.appMode === "imagine") return;
-    const messageIndex = activeConversation.messages.findIndex((message) => message.id === messageId);
+    const messageIndex = activeConversation.messages.findIndex(
+      (message) => message.id === messageId,
+    );
     const target = activeConversation.messages[messageIndex];
     if (!target || target.role !== "assistant" || target.images?.length) return;
 
     const conversationId = activeConversation.id;
-    const visibleSnapshot: MessageVariant = { content: target.content, sources: target.sources };
+    const visibleSnapshot: MessageVariant = snapshotMessage(target);
     const variants = target.variants?.length ? target.variants : [visibleSnapshot];
     const restoreIndex = target.variants?.length
       ? Math.min(target.variantIndex ?? variants.length - 1, variants.length - 1)
@@ -448,15 +475,7 @@ export function BrainwormApp() {
                 updatedAt: Date.now(),
                 messages: conversation.messages.map((message) => {
                   if (message.id !== messageId) return message;
-                  const nextVariants = [...(message.variants ?? variants), { content, sources }];
-                  return {
-                    ...message,
-                    content,
-                    sources,
-                    status: "complete" as const,
-                    variants: nextVariants,
-                    variantIndex: nextVariants.length - 1,
-                  };
+                  return appendMessageVariant(message, { content, sources });
                 }),
               }
             : conversation,
@@ -528,7 +547,7 @@ export function BrainwormApp() {
           speed: state.settings.ttsSpeed,
         });
       }
-    } catch (error) {
+    } catch {
       if (accumulated) {
         finishVariant(accumulated, finalSources);
       } else {
@@ -547,7 +566,7 @@ export function BrainwormApp() {
     }
   };
 
-  const useLatestImage = async () => {
+  const attachLatestImage = async () => {
     const reference = [...(activeConversation?.messages ?? [])]
       .reverse()
       .flatMap((message) => [...(message.images ?? [])].reverse())[0];
@@ -565,7 +584,7 @@ export function BrainwormApp() {
 
   const generateImagine = async (prompt: string) => {
     if (!prompt || streamingMessageId || !activeConversation) return;
-    const now = Date.now();
+    const now = currentTimestamp();
     const conversationId = activeConversation.id;
     const sourceImage = pendingImage;
     const userMessage: Message = {
@@ -579,7 +598,9 @@ export function BrainwormApp() {
     const assistantMessage: Message = {
       id: makeId("imagine"),
       role: "assistant",
-      content: sourceImage ? "Editing the latest leaf with Grok Imagine…" : "Grok Imagine is sketching in the margins…",
+      content: sourceImage
+        ? "Editing the latest leaf with Grok Imagine…"
+        : "Grok Imagine is sketching in the margins…",
       createdAt: now + 1,
       status: "streaming",
     };
@@ -589,12 +610,19 @@ export function BrainwormApp() {
     setStreamingMessageId(assistantMessage.id);
     setState((current) => ({
       ...current,
-      conversations: current.conversations.map((conversation) => conversation.id === conversationId ? {
-        ...conversation,
-        title: conversation.messages.length === 0 ? makeConversationTitle(prompt) : conversation.title,
-        updatedAt: now,
-        messages: [...conversation.messages, userMessage, assistantMessage],
-      } : conversation),
+      conversations: current.conversations.map((conversation) =>
+        conversation.id === conversationId
+          ? {
+              ...conversation,
+              title:
+                conversation.messages.length === 0
+                  ? makeConversationTitle(prompt)
+                  : conversation.title,
+              updatedAt: now,
+              messages: [...conversation.messages, userMessage, assistantMessage],
+            }
+          : conversation,
+      ),
     }));
 
     const abortController = new AbortController();
@@ -613,7 +641,7 @@ export function BrainwormApp() {
         }),
         signal: abortController.signal,
       });
-      const payload = await response.json() as {
+      const payload = (await response.json()) as {
         error?: string;
         images?: { b64: string; mimeType: string }[];
         model?: BrainwormSettings["imagineModel"];
@@ -621,30 +649,39 @@ export function BrainwormApp() {
         resolution?: "1k" | "2k";
         kind?: "generated" | "edited";
       };
-      if (!response.ok || !payload.images?.length) throw new Error(payload.error || "Grok Imagine returned no images.");
+      if (!response.ok || !payload.images?.length)
+        throw new Error(payload.error || "Grok Imagine returned no images.");
 
-      const images: GeneratedImageRef[] = await Promise.all(payload.images.map(async (image) => {
-        const id = crypto.randomUUID();
-        await saveImageBlob(id, base64ToBlob(image.b64, image.mimeType));
-        return {
-          id,
-          prompt,
-          mimeType: image.mimeType,
-          model: payload.model ?? state.settings.imagineModel,
-          aspectRatio: payload.aspectRatio ?? state.settings.imagineAspectRatio,
-          resolution: payload.resolution ?? state.settings.imagineResolution,
-          kind: payload.kind ?? (sourceImage ? "edited" : "generated"),
-          createdAt: Date.now(),
-        };
-      }));
+      const images: GeneratedImageRef[] = await Promise.all(
+        payload.images.map(async (image) => {
+          const id = crypto.randomUUID();
+          await saveImageBlob(id, base64ToBlob(image.b64, image.mimeType));
+          return {
+            id,
+            prompt,
+            mimeType: image.mimeType,
+            model: payload.model ?? state.settings.imagineModel,
+            aspectRatio: payload.aspectRatio ?? state.settings.imagineAspectRatio,
+            resolution: payload.resolution ?? state.settings.imagineResolution,
+            kind: payload.kind ?? (sourceImage ? "edited" : "generated"),
+            createdAt: Date.now(),
+          };
+        }),
+      );
       patchMessage(conversationId, assistantMessage.id, {
-        content: images.length === 1 ? "I found this image between the pages." : `I found ${images.length} variations between the pages.`,
+        content:
+          images.length === 1
+            ? "I found this image between the pages."
+            : `I found ${images.length} variations between the pages.`,
         status: "complete",
         images,
       });
     } catch (error) {
       if (abortController.signal.aborted) {
-        patchMessage(conversationId, assistantMessage.id, { content: "The sketch was set aside.", status: "complete" });
+        patchMessage(conversationId, assistantMessage.id, {
+          content: "The sketch was set aside.",
+          status: "complete",
+        });
       } else {
         patchMessage(conversationId, assistantMessage.id, {
           content: `The image press jammed: ${error instanceof Error ? error.message : "Grok Imagine failed."}`,
@@ -676,7 +713,10 @@ export function BrainwormApp() {
         return;
       }
       if (command === "/search") {
-        updateSettings({ webSearch: remainder === "on" ? true : remainder === "off" ? false : !state.settings.webSearch });
+        updateSettings({
+          webSearch:
+            remainder === "on" ? true : remainder === "off" ? false : !state.settings.webSearch,
+        });
         setInput("");
         return;
       }
@@ -698,7 +738,7 @@ export function BrainwormApp() {
       }
     }
 
-    const now = Date.now();
+    const now = currentTimestamp();
     const conversationId = activeConversation.id;
     const userMessage: Message = {
       id: makeId("user"),
@@ -863,35 +903,50 @@ export function BrainwormApp() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [historyQuery, state.conversations]);
 
-  const turns = activeConversation?.messages.filter((message) => message.role === "user").length ?? 0;
+  const turns =
+    activeConversation?.messages.filter((message) => message.role === "user").length ?? 0;
 
   return (
-    <div className={`brainworm-app ${hydrated ? "is-ready" : ""} ${state.settings.appMode === "code" ? "is-code-mode" : state.settings.appMode === "imagine" ? "is-imagine-mode" : ""}`}>
+    <div
+      className={`brainworm-app ${hydrated ? "is-ready" : ""} ${state.settings.appMode === "code" ? "is-code-mode" : state.settings.appMode === "imagine" ? "is-imagine-mode" : ""}`}
+    >
       <aside className="rail" aria-label="Main navigation">
         <BrainLogo className="rail__logo" />
-        <RailButton label="New thread" onClick={newConversation}><PlusIcon /></RailButton>
+        <RailButton label="New thread" onClick={newConversation}>
+          <PlusIcon />
+        </RailButton>
         <RailButton
           label="My library"
           active={panel === "history"}
-          onClick={() => setPanel((current) => current === "history" ? null : "history")}
-        ><LibraryIcon /></RailButton>
+          onClick={() => setPanel((current) => (current === "history" ? null : "history"))}
+        >
+          <LibraryIcon />
+        </RailButton>
         <RailButton
           label="Code grove"
           active={state.settings.appMode === "code"}
           onClick={() => setAppMode(state.settings.appMode === "code" ? "chat" : "code")}
-        ><CodeIcon /></RailButton>
+        >
+          <CodeIcon />
+        </RailButton>
         <RailButton
           label="Imagine studio"
           active={state.settings.appMode === "imagine"}
           onClick={() => setAppMode(state.settings.appMode === "imagine" ? "chat" : "imagine")}
-        ><ImageIcon /></RailButton>
+        >
+          <ImageIcon />
+        </RailButton>
         <div className="rail__spacer" />
         <RailButton
           label="Burrow setup"
           active={panel === "settings"}
-          onClick={() => setPanel((current) => current === "settings" ? null : "settings")}
-        ><SettingsIcon /></RailButton>
-        <div className="rail__model" title={health?.model ?? "grok-4.5"}>G4.5</div>
+          onClick={() => setPanel((current) => (current === "settings" ? null : "settings"))}
+        >
+          <SettingsIcon />
+        </RailButton>
+        <div className="rail__model" title={health?.model ?? "grok-4.5"}>
+          G4.5
+        </div>
       </aside>
 
       <main className="main-shell">
@@ -899,28 +954,80 @@ export function BrainwormApp() {
           <BrainLogo className="topbar__mobile-logo" withWordmark />
           <div className="topbar__thread">
             <h1>{activeConversation?.title ?? "Fresh burrow"}</h1>
-            <span>{turns} {turns === 1 ? "turn" : "turns"}</span>
+            <span>
+              {turns} {turns === 1 ? "turn" : "turns"}
+            </span>
             <span className="topbar__persona">
               {state.settings.appMode === "code"
                 ? `Code mode · ${state.settings.codeSessionMode}`
-                : state.settings.appMode === "imagine" ? "Imagine studio" : "Bookworm mode"}
+                : state.settings.appMode === "imagine"
+                  ? "Imagine studio"
+                  : "Bookworm mode"}
             </span>
           </div>
           <div className="topbar__mode-switch" aria-label="Workspace mode">
-            <button className={state.settings.appMode === "chat" ? "is-on" : ""} onClick={() => setAppMode("chat")}>Chat</button>
-            <button className={state.settings.appMode === "code" ? "is-on" : ""} onClick={() => setAppMode("code")}><CodeIcon />Code</button>
-            <button className={state.settings.appMode === "imagine" ? "is-on" : ""} onClick={() => setAppMode("imagine")}><ImageIcon />Imagine</button>
+            <button
+              className={state.settings.appMode === "chat" ? "is-on" : ""}
+              onClick={() => setAppMode("chat")}
+            >
+              Chat
+            </button>
+            <button
+              className={state.settings.appMode === "code" ? "is-on" : ""}
+              onClick={() => setAppMode("code")}
+            >
+              <CodeIcon />
+              Code
+            </button>
+            <button
+              className={state.settings.appMode === "imagine" ? "is-on" : ""}
+              onClick={() => setAppMode("imagine")}
+            >
+              <ImageIcon />
+              Imagine
+            </button>
           </div>
           <div className="topbar__status">
-            {state.settings.webSearch && <span><SearchIcon />Surface scout on</span>}
-            {state.settings.ttsEnabled && <span><VolumeIcon />{state.settings.ttsVoice}</span>}
-            {state.settings.appMode === "code" && <span><CodeIcon />Python sandbox</span>}
-            {state.settings.appMode === "imagine" && <span><ImageIcon />Grok Imagine</span>}
-            {state.settings.appMode === "code" && state.settings.mcpEnabled && health?.mcpConfigured && (
-              <span><span className="connection-dot is-on" />{health.mcpLabel} MCP</span>
+            {state.settings.webSearch && (
+              <span>
+                <SearchIcon />
+                Surface scout on
+              </span>
             )}
+            {state.settings.ttsEnabled && (
+              <span>
+                <VolumeIcon />
+                {state.settings.ttsVoice}
+              </span>
+            )}
+            {state.settings.appMode === "code" && (
+              <span>
+                <CodeIcon />
+                Python sandbox
+              </span>
+            )}
+            {state.settings.appMode === "imagine" && (
+              <span>
+                <ImageIcon />
+                Grok Imagine
+              </span>
+            )}
+            {state.settings.appMode === "code" &&
+              state.settings.mcpEnabled &&
+              health?.mcpConfigured && (
+                <span>
+                  <span className="connection-dot is-on" />
+                  {health.mcpLabel} MCP
+                </span>
+              )}
             <span className={`connection-dot ${health?.configured ? "is-on" : ""}`} />
-            <span>{health === null ? "Checking den" : health.configured ? "xAI den ready" : "Key needed"}</span>
+            <span>
+              {health === null
+                ? "Checking den"
+                : health.configured
+                  ? "xAI den ready"
+                  : "Key needed"}
+            </span>
           </div>
         </header>
 
@@ -944,12 +1051,26 @@ export function BrainwormApp() {
               ))}
             </div>
           ) : (
-            <section className={`welcome ${state.settings.appMode === "code" ? "welcome--code" : state.settings.appMode === "imagine" ? "welcome--imagine" : ""}`}>
-              <div className="welcome__art"><BrainLogo /></div>
+            <section
+              className={`welcome ${state.settings.appMode === "code" ? "welcome--code" : state.settings.appMode === "imagine" ? "welcome--imagine" : ""}`}
+            >
+              <div className="welcome__art">
+                <BrainLogo />
+              </div>
               <p className="welcome__eyebrow">
-                {state.settings.appMode === "code" ? "Code grove · powered by Grok 4.5" : state.settings.appMode === "imagine" ? "Imagine studio · native xAI image generation" : "A curious mind has many tunnels"}
+                {state.settings.appMode === "code"
+                  ? "Code grove · powered by Grok 4.5"
+                  : state.settings.appMode === "imagine"
+                    ? "Imagine studio · native xAI image generation"
+                    : "A curious mind has many tunnels"}
               </p>
-              <h2>{state.settings.appMode === "code" ? "Trace the roots. Then change the tree." : state.settings.appMode === "imagine" ? "Picture what’s hiding between the pages." : "A good question is a doorway."}</h2>
+              <h2>
+                {state.settings.appMode === "code"
+                  ? "Trace the roots. Then change the tree."
+                  : state.settings.appMode === "imagine"
+                    ? "Picture what’s hiding between the pages."
+                    : "A good question is a doorway."}
+              </h2>
               <p className="welcome__copy">
                 {state.settings.appMode === "code"
                   ? "Connect a workspace over MCP or attach a few source files. Plan, Build, and Verify borrow Grok Build’s disciplined session loop—with explicit tool boundaries."
@@ -958,9 +1079,15 @@ export function BrainwormApp() {
                     : "I’m Brainworm—part research companion, part margin scribbler. Bring me a knotty idea and we’ll dig until the roots show."}
               </p>
               <div className="welcome__starters">
-                {(state.settings.appMode === "code" ? CODE_STARTERS : state.settings.appMode === "imagine" ? IMAGINE_STARTERS : STARTERS).map((starter) => (
+                {(state.settings.appMode === "code"
+                  ? CODE_STARTERS
+                  : state.settings.appMode === "imagine"
+                    ? IMAGINE_STARTERS
+                    : STARTERS
+                ).map((starter) => (
                   <button key={starter} onClick={() => void sendMessage(starter)}>
-                    <span>{starter}</span><SparkIcon />
+                    <span>{starter}</span>
+                    <SparkIcon />
                   </button>
                 ))}
               </div>
@@ -979,7 +1106,13 @@ export function BrainwormApp() {
                       className={state.settings.codeSessionMode === mode ? "is-on" : ""}
                       onClick={() => updateSettings({ codeSessionMode: mode })}
                     >
-                      {mode === "build" ? <CodeIcon /> : mode === "verify" ? <CheckIcon /> : <LibraryIcon />}
+                      {mode === "build" ? (
+                        <CodeIcon />
+                      ) : mode === "verify" ? (
+                        <CheckIcon />
+                      ) : (
+                        <LibraryIcon />
+                      )}
                       {mode}
                     </button>
                   ))}
@@ -989,19 +1122,57 @@ export function BrainwormApp() {
             )}
             {state.settings.appMode === "imagine" && (
               <div className="imagine-modebar">
-                <label>Model<select value={state.settings.imagineModel} onChange={(event) => updateSettings({ imagineModel: event.target.value as BrainwormSettings["imagineModel"] })}>
-                  <option value="grok-imagine-image-quality">Quality</option>
-                  <option value="grok-imagine-image">Fast</option>
-                </select></label>
-                <label>Frame<select value={state.settings.imagineAspectRatio} onChange={(event) => updateSettings({ imagineAspectRatio: event.target.value })}>
-                  {IMAGINE_RATIOS.map((ratio) => <option key={ratio} value={ratio}>{ratio}</option>)}
-                </select></label>
-                <label>Size<select value={state.settings.imagineResolution} onChange={(event) => updateSettings({ imagineResolution: event.target.value as "1k" | "2k" })}>
-                  <option value="1k">1K</option><option value="2k">2K</option>
-                </select></label>
-                <label>Count<select value={state.settings.imagineCount} onChange={(event) => updateSettings({ imagineCount: Number(event.target.value) })}>
-                  <option value="1">1</option><option value="2">2</option>
-                </select></label>
+                <label>
+                  Model
+                  <select
+                    value={state.settings.imagineModel}
+                    onChange={(event) =>
+                      updateSettings({
+                        imagineModel: event.target.value as BrainwormSettings["imagineModel"],
+                      })
+                    }
+                  >
+                    <option value="grok-imagine-image-quality">Quality</option>
+                    <option value="grok-imagine-image">Fast</option>
+                  </select>
+                </label>
+                <label>
+                  Frame
+                  <select
+                    value={state.settings.imagineAspectRatio}
+                    onChange={(event) => updateSettings({ imagineAspectRatio: event.target.value })}
+                  >
+                    {IMAGINE_RATIOS.map((ratio) => (
+                      <option key={ratio} value={ratio}>
+                        {ratio}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Size
+                  <select
+                    value={state.settings.imagineResolution}
+                    onChange={(event) =>
+                      updateSettings({ imagineResolution: event.target.value as "1k" | "2k" })
+                    }
+                  >
+                    <option value="1k">1K</option>
+                    <option value="2k">2K</option>
+                  </select>
+                </label>
+                <label>
+                  Count
+                  <select
+                    value={state.settings.imagineCount}
+                    onChange={(event) =>
+                      updateSettings({ imagineCount: Number(event.target.value) })
+                    }
+                  >
+                    <option value="1">1</option>
+                    <option value="2">2</option>
+                  </select>
+                </label>
               </div>
             )}
             {(pendingFiles.length > 0 || pendingImage) && (
@@ -1009,13 +1180,27 @@ export function BrainwormApp() {
                 {pendingFiles.map((file) => (
                   <span key={file.name} title={`${Math.ceil(file.size / 1024)} KB`}>
                     @{file.name}
-                    <button onClick={() => setPendingFiles((current) => current.filter((item) => item.name !== file.name))} aria-label={`Remove ${file.name}`}><CloseIcon /></button>
+                    <button
+                      onClick={() =>
+                        setPendingFiles((current) =>
+                          current.filter((item) => item.name !== file.name),
+                        )
+                      }
+                      aria-label={`Remove ${file.name}`}
+                    >
+                      <CloseIcon />
+                    </button>
                   </span>
                 ))}
                 {pendingImage && (
                   <span title="This image will be edited with Grok Imagine">
                     @{pendingImage.name}
-                    <button onClick={() => setPendingImage(null)} aria-label={`Remove ${pendingImage.name}`}><CloseIcon /></button>
+                    <button
+                      onClick={() => setPendingImage(null)}
+                      aria-label={`Remove ${pendingImage.name}`}
+                    >
+                      <CloseIcon />
+                    </button>
                   </span>
                 )}
               </div>
@@ -1036,29 +1221,55 @@ export function BrainwormApp() {
                   void sendMessage();
                 }
               }}
-              placeholder={state.settings.appMode === "code" ? "Describe the task, attach code, or type /plan…" : state.settings.appMode === "imagine" ? pendingImage ? "Describe how Grok Imagine should edit this image…" : "Describe an image to unearth…" : "Leave a thought at the mouth of the burrow…"}
+              placeholder={
+                state.settings.appMode === "code"
+                  ? "Describe the task, attach code, or type /plan…"
+                  : state.settings.appMode === "imagine"
+                    ? pendingImage
+                      ? "Describe how Grok Imagine should edit this image…"
+                      : "Describe an image to unearth…"
+                    : "Leave a thought at the mouth of the burrow…"
+              }
               aria-label="Message Brainworm"
             />
-            {state.settings.appMode === "code" && input.startsWith("/") && !input.slice(1).includes(" ") && (
-              <div className="command-menu">
-                {CODE_COMMANDS.filter((item) => item.command.startsWith(input.toLowerCase())).map((item) => (
-                  <button key={item.command} onClick={() => {
-                    setInput(`${item.command} `);
-                    textareaRef.current?.focus();
-                  }}>
-                    <code>{item.command}</code><span>{item.description}</span>
-                  </button>
-                ))}
-              </div>
-            )}
+            {state.settings.appMode === "code" &&
+              input.startsWith("/") &&
+              !input.slice(1).includes(" ") && (
+                <div className="command-menu">
+                  {CODE_COMMANDS.filter((item) => item.command.startsWith(input.toLowerCase())).map(
+                    (item) => (
+                      <button
+                        key={item.command}
+                        onClick={() => {
+                          setInput(`${item.command} `);
+                          textareaRef.current?.focus();
+                        }}
+                      >
+                        <code>{item.command}</code>
+                        <span>{item.description}</span>
+                      </button>
+                    ),
+                  )}
+                </div>
+              )}
             <div className="composer__footer">
               <span>
                 {state.settings.appMode === "code" ? `${state.settings.codeSessionMode} · ` : ""}
-                {state.settings.appMode === "imagine" ? `${state.settings.imagineModel.endsWith("quality") ? "quality" : "fast"} · ${state.settings.imagineAspectRatio} · ` : ""}
-                {state.settings.reasoningEffort === "low" ? "Nibble" : state.settings.reasoningEffort === "medium" ? "Dig" : "Deep tunnel"}
+                {state.settings.appMode === "imagine"
+                  ? `${state.settings.imagineModel.endsWith("quality") ? "quality" : "fast"} · ${state.settings.imagineAspectRatio} · `
+                  : ""}
+                {state.settings.reasoningEffort === "low"
+                  ? "Nibble"
+                  : state.settings.reasoningEffort === "medium"
+                    ? "Dig"
+                    : "Deep tunnel"}
                 {state.settings.webSearch ? " · web search" : " · local context"}
                 {state.settings.ttsEnabled ? ` · ${state.settings.ttsVoice} voice` : ""}
-                {state.settings.appMode === "code" && state.settings.mcpEnabled && health?.mcpConfigured ? ` · ${health.mcpLabel} MCP` : ""}
+                {state.settings.appMode === "code" &&
+                state.settings.mcpEnabled &&
+                health?.mcpConfigured
+                  ? ` · ${health.mcpLabel} MCP`
+                  : ""}
               </span>
               {(state.settings.appMode === "code" || state.settings.appMode === "imagine") && (
                 <>
@@ -1067,60 +1278,133 @@ export function BrainwormApp() {
                     className="visually-hidden"
                     type="file"
                     multiple
-                    accept={state.settings.appMode === "imagine" ? "image/png,image/jpeg,image/webp" : "text/*,.js,.jsx,.ts,.tsx,.json,.css,.scss,.html,.md,.py,.rs,.go,.java,.c,.cpp,.h,.hpp,.rb,.php,.swift,.kt,.kts,.toml,.yaml,.yml,.sql,.sh"}
-                    onChange={(event) => state.settings.appMode === "imagine" ? void addImage(event.target.files) : void addFiles(event.target.files)}
+                    accept={
+                      state.settings.appMode === "imagine"
+                        ? "image/png,image/jpeg,image/webp"
+                        : "text/*,.js,.jsx,.ts,.tsx,.json,.css,.scss,.html,.md,.py,.rs,.go,.java,.c,.cpp,.h,.hpp,.rb,.php,.swift,.kt,.kts,.toml,.yaml,.yml,.sql,.sh"
+                    }
+                    onChange={(event) =>
+                      state.settings.appMode === "imagine"
+                        ? void addImage(event.target.files)
+                        : void addFiles(event.target.files)
+                    }
                   />
-                  {state.settings.appMode === "imagine" && activeConversation?.messages.some((message) => message.images?.length) && !pendingImage && (
-                    <button className="composer__latest" onClick={() => void useLatestImage()} title="Edit latest image">Latest</button>
-                  )}
-                  <button className="composer__attach" onClick={() => fileInputRef.current?.click()} aria-label={state.settings.appMode === "imagine" ? "Attach an image to edit" : "Attach source files"} title={state.settings.appMode === "imagine" ? "Attach an image to edit" : "Attach source files"}><PaperclipIcon /></button>
+                  {state.settings.appMode === "imagine" &&
+                    activeConversation?.messages.some((message) => message.images?.length) &&
+                    !pendingImage && (
+                      <button
+                        className="composer__latest"
+                        onClick={() => void attachLatestImage()}
+                        title="Edit latest image"
+                      >
+                        Latest
+                      </button>
+                    )}
+                  <button
+                    className="composer__attach"
+                    onClick={() => fileInputRef.current?.click()}
+                    aria-label={
+                      state.settings.appMode === "imagine"
+                        ? "Attach an image to edit"
+                        : "Attach source files"
+                    }
+                    title={
+                      state.settings.appMode === "imagine"
+                        ? "Attach an image to edit"
+                        : "Attach source files"
+                    }
+                  >
+                    <PaperclipIcon />
+                  </button>
                 </>
               )}
               {streamingMessageId ? (
-                <button className="composer__send is-stop" onClick={() => abortRef.current?.abort()} aria-label="Stop response">
+                <button
+                  className="composer__send is-stop"
+                  onClick={() => abortRef.current?.abort()}
+                  aria-label="Stop response"
+                >
                   <StopIcon />
                 </button>
               ) : (
-                <button className="composer__send" onClick={() => void sendMessage()} disabled={!input.trim()} aria-label="Send message">
+                <button
+                  className="composer__send"
+                  onClick={() => void sendMessage()}
+                  disabled={!input.trim()}
+                  aria-label="Send message"
+                >
                   <SendIcon />
                 </button>
               )}
             </div>
           </div>
-          <p className="composer-wrap__note">Brainworm can make mistakes. Check the roots before you climb the tree.</p>
+          <p className="composer-wrap__note">
+            Brainworm can make mistakes. Check the roots before you climb the tree.
+          </p>
         </div>
       </main>
 
       {panel && (
-        <div className="panel-scrim" onPointerDown={(event) => {
-          if (event.target === event.currentTarget) setPanel(null);
-        }}>
-          <aside className="drawer" aria-label={panel === "history" ? "Conversation library" : "Settings"}>
+        <div
+          className="panel-scrim"
+          onPointerDown={(event) => {
+            if (event.target === event.currentTarget) setPanel(null);
+          }}
+        >
+          <aside
+            className="drawer"
+            aria-label={panel === "history" ? "Conversation library" : "Settings"}
+          >
             <div className="drawer__header">
               <div>
                 <p>{panel === "history" ? "Your shelf" : "Fine-tune the worm"}</p>
                 <h2>{panel === "history" ? "Library" : "Burrow setup"}</h2>
               </div>
-              <button onClick={() => setPanel(null)} aria-label="Close panel"><CloseIcon /></button>
+              <button onClick={() => setPanel(null)} aria-label="Close panel">
+                <CloseIcon />
+              </button>
             </div>
 
             {panel === "history" ? (
               <div className="history-panel">
                 <label className="history-search">
                   <SearchIcon />
-                  <input value={historyQuery} onChange={(event) => setHistoryQuery(event.target.value)} placeholder="Search your threads" />
+                  <input
+                    value={historyQuery}
+                    onChange={(event) => setHistoryQuery(event.target.value)}
+                    placeholder="Search your threads"
+                  />
                 </label>
-                <button className="new-thread-button" onClick={newConversation}><PlusIcon />Start a fresh burrow</button>
+                <button className="new-thread-button" onClick={newConversation}>
+                  <PlusIcon />
+                  Start a fresh burrow
+                </button>
                 <div className="history-list">
                   {visibleHistory.map((conversation) => (
-                    <div className={`history-row ${conversation.id === activeConversation?.id ? "is-active" : ""}`} key={conversation.id}>
-                      <button className="history-row__select" onClick={() => selectConversation(conversation.id)}>
+                    <div
+                      className={`history-row ${conversation.id === activeConversation?.id ? "is-active" : ""}`}
+                      key={conversation.id}
+                    >
+                      <button
+                        className="history-row__select"
+                        onClick={() => selectConversation(conversation.id)}
+                      >
                         <span>{conversation.title}</span>
                         <small>
-                          {conversation.messages.filter((message) => message.role === "user").length} turns · {formatRelativeTime(conversation.updatedAt)}
+                          {
+                            conversation.messages.filter((message) => message.role === "user")
+                              .length
+                          }{" "}
+                          turns · {formatRelativeTime(conversation.updatedAt)}
                         </small>
                       </button>
-                      <button className="history-row__delete" onClick={() => deleteConversation(conversation.id)} aria-label={`Delete ${conversation.title}`}><TrashIcon /></button>
+                      <button
+                        className="history-row__delete"
+                        onClick={() => deleteConversation(conversation.id)}
+                        aria-label={`Delete ${conversation.title}`}
+                      >
+                        <TrashIcon />
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -1128,151 +1412,261 @@ export function BrainwormApp() {
             ) : (
               <div className="settings-shell">
                 <nav className="settings-tabs" aria-label="Settings sections">
-                  {([
-                    ["model", "Model"],
-                    ["tools", "Tools"],
-                    ["voice", "Voice"],
-                    ["workspaces", "Workspaces"],
-                    ["theme", "Theme"],
-                    ["data", "Data"],
-                  ] as const).map(([tab, label]) => (
+                  {(
+                    [
+                      ["model", "Model"],
+                      ["tools", "Tools"],
+                      ["voice", "Voice"],
+                      ["workspaces", "Workspaces"],
+                      ["theme", "Theme"],
+                      ["data", "Data"],
+                    ] as const
+                  ).map(([tab, label]) => (
                     <button
                       key={tab}
                       className={settingsTab === tab ? "is-active" : ""}
                       onClick={() => setSettingsTab(tab)}
                       aria-current={settingsTab === tab ? "page" : undefined}
-                    >{label}</button>
+                    >
+                      {label}
+                    </button>
                   ))}
                 </nav>
                 <div className="settings-panel">
-                {settingsTab === "model" && (<>
-                <SettingSection title="Connection" description="The key stays on your server, never in the reader's browser.">
-                  <div className="connection-card">
-                    <span className={`connection-dot ${health?.configured ? "is-on" : ""}`} />
-                    <div><b>{health?.configured ? "xAI is connected" : "xAI key not found"}</b><small>{health?.model ?? "grok-4.5"} · Responses API</small></div>
-                  </div>
-                  {!health?.configured && <code className="env-hint">XAI_API_KEY=your-key</code>}
-                </SettingSection>
-
-                <SettingSection title="How deep should I dig?" description="Grok 4.5 always reasons; this sets its effort level.">
-                  <div className="segmented">
-                    {(["low", "medium", "high"] as const).map((effort) => (
-                      <button key={effort} className={state.settings.reasoningEffort === effort ? "is-on" : ""} onClick={() => updateSettings({ reasoningEffort: effort })}>
-                        {effort === "low" ? "Nibble" : effort === "medium" ? "Dig" : "Tunnel"}
-                      </button>
-                    ))}
-                  </div>
-                </SettingSection>
-                </>)}
-
-                {settingsTab === "tools" && (
-                <SettingSection title="Surface scout" description="Let xAI search the live web and return citation breadcrumbs.">
-                  <Toggle checked={state.settings.webSearch} onChange={(webSearch) => updateSettings({ webSearch })} label="Use native web search" />
-                </SettingSection>
-                )}
-
-                {settingsTab === "voice" && (
-                <SettingSection title="Reading voice" description="Wordmark-style xAI playback with local audio caching, autoplay, and per-message controls.">
-                  <Toggle
-                    checked={state.settings.ttsEnabled}
-                    onChange={(ttsEnabled) => {
-                      updateSettings({ ttsEnabled });
-                      if (!ttsEnabled) stopTtsMessage();
-                    }}
-                    label="Enable xAI text to speech"
-                    disabled={!health?.configured}
-                  />
-                  {state.settings.ttsEnabled && (
-                    <div className="voice-settings">
-                      <label className="setting-select">
-                        <span>Voice</span>
-                        <select value={state.settings.ttsVoice} onChange={(event) => updateSettings({ ttsVoice: event.target.value })}>
-                          {!ttsVoices.some((voice) => voice.voiceId === state.settings.ttsVoice) && (
-                            <option value={state.settings.ttsVoice}>{state.settings.ttsVoice}</option>
-                          )}
-                          {ttsVoices.map((voice) => <option key={voice.voiceId} value={voice.voiceId}>{voice.name}</option>)}
-                        </select>
-                      </label>
-                      <Toggle checked={state.settings.ttsAutoplay} onChange={(ttsAutoplay) => updateSettings({ ttsAutoplay })} label="Autoplay new replies" />
-                      <label className="voice-speed">
-                        <span>Reading speed <b>{state.settings.ttsSpeed.toFixed(2)}×</b></span>
-                        <input
-                          type="range"
-                          min="0.7"
-                          max="1.5"
-                          step="0.05"
-                          value={state.settings.ttsSpeed}
-                          onChange={(event) => updateSettings({ ttsSpeed: Number(event.target.value) })}
-                        />
-                      </label>
-                      <div className="voice-actions">
-                        <button onClick={() => void playTtsMessage({
-                          messageId: "voice-preview",
-                          text: "Brainworm reporting from the margins. The roots look interesting down here.",
-                          voice: state.settings.ttsVoice,
-                          speed: state.settings.ttsSpeed,
-                        })}><VolumeIcon />Test voice</button>
-                        <button onClick={() => void clearTtsCache()}><TrashIcon />Clear audio cache</button>
-                      </div>
-                    </div>
-                  )}
-                </SettingSection>
-                )}
-
-                {settingsTab === "workspaces" && (<>
-                <SettingSection title="Code grove" description="A Grok Build-inspired workflow with browser-safe limits and xAI's isolated Python runner.">
-                  <Toggle checked={state.settings.appMode === "code"} onChange={(enabled) => setAppMode(enabled ? "code" : "chat")} label="Enable coding workspace" />
-                  {state.settings.appMode === "code" && (
+                  {settingsTab === "model" && (
                     <>
-                      <div className="mcp-card">
-                        <div className="mcp-card__status">
-                          <span className={`connection-dot ${health?.mcpConfigured ? "is-on" : ""}`} />
+                      <SettingSection
+                        title="Connection"
+                        description="The key stays on your server, never in the reader's browser."
+                      >
+                        <div className="connection-card">
+                          <span className={`connection-dot ${health?.configured ? "is-on" : ""}`} />
                           <div>
-                            <b>{health?.mcpConfigured ? `${health.mcpLabel} workspace ready` : "Workspace MCP not configured"}</b>
-                            <small>{health?.mcpReadOnlyConfigured ? "Plan/Verify read-only policy ready" : "Plan/Verify use attached context only"}</small>
+                            <b>{health?.configured ? "xAI is connected" : "xAI key not found"}</b>
+                            <small>{health?.model ?? "grok-4.5"} · Responses API</small>
                           </div>
                         </div>
-                        <Toggle
-                          checked={state.settings.mcpEnabled}
-                          onChange={(mcpEnabled) => updateSettings({ mcpEnabled })}
-                          label="Arm MCP tools for requests"
-                          disabled={!health?.mcpConfigured}
-                        />
-                      </div>
-                      <div className="code-safety-note">
-                        <CodeIcon />
-                        <span>
-                          {state.settings.mcpEnabled && health?.mcpConfigured
-                            ? "Build may use only the server allowlist. Plan and Verify receive only the read-only allowlist. xAI does not yet support per-call MCP approvals."
-                            : "Attached files remain read-only context. Add the MCP environment variables to let Brainworm inspect, patch, and verify a real workspace."}
-                        </span>
-                      </div>
+                        {!health?.configured && (
+                          <code className="env-hint">XAI_API_KEY=your-key</code>
+                        )}
+                      </SettingSection>
+
+                      <SettingSection
+                        title="How deep should I dig?"
+                        description="Grok 4.5 always reasons; this sets its effort level."
+                      >
+                        <div className="segmented">
+                          {(["low", "medium", "high"] as const).map((effort) => (
+                            <button
+                              key={effort}
+                              className={state.settings.reasoningEffort === effort ? "is-on" : ""}
+                              onClick={() => updateSettings({ reasoningEffort: effort })}
+                            >
+                              {effort === "low" ? "Nibble" : effort === "medium" ? "Dig" : "Tunnel"}
+                            </button>
+                          ))}
+                        </div>
+                      </SettingSection>
                     </>
                   )}
-                </SettingSection>
 
-                <SettingSection title="Imagine studio" description="Native Grok Imagine generation and editing, adapted from Wordmark’s media tool flow.">
-                  <div className="imagine-setting-card">
-                    <button onClick={() => setAppMode("imagine")}><ImageIcon />Open Imagine studio</button>
-                    <span>{state.settings.imagineModel.endsWith("quality") ? "Quality" : "Fast"} · {state.settings.imagineResolution.toUpperCase()} · {state.settings.imagineAspectRatio}</span>
-                  </div>
-                </SettingSection>
-                </>)}
+                  {settingsTab === "tools" && (
+                    <SettingSection
+                      title="Surface scout"
+                      description="Let xAI search the live web and return citation breadcrumbs."
+                    >
+                      <Toggle
+                        checked={state.settings.webSearch}
+                        onChange={(webSearch) => updateSettings({ webSearch })}
+                        label="Use native web search"
+                      />
+                    </SettingSection>
+                  )}
 
-                {settingsTab === "theme" && (
-                <SettingSection title="Reading light" description="Both palettes stay rooted in moss, clay, bark, and paper.">
-                  <div className="theme-choice">
-                    <button className={state.settings.theme === "paper" ? "is-on" : ""} onClick={() => updateSettings({ theme: "paper" })}><SunIcon />Parchment</button>
-                    <button className={state.settings.theme === "night" ? "is-on" : ""} onClick={() => updateSettings({ theme: "night" })}><MoonIcon />Night soil</button>
-                  </div>
-                </SettingSection>
-                )}
+                  {settingsTab === "voice" && (
+                    <SettingSection
+                      title="Reading voice"
+                      description="Wordmark-style xAI playback with local audio caching, autoplay, and per-message controls."
+                    >
+                      <Toggle
+                        checked={state.settings.ttsEnabled}
+                        onChange={(ttsEnabled) => {
+                          updateSettings({ ttsEnabled });
+                          if (!ttsEnabled) stopTtsMessage();
+                        }}
+                        label="Enable xAI text to speech"
+                        disabled={!health?.configured}
+                      />
+                      {state.settings.ttsEnabled && (
+                        <div className="voice-settings">
+                          <label className="setting-select">
+                            <span>Voice</span>
+                            <select
+                              value={state.settings.ttsVoice}
+                              onChange={(event) => updateSettings({ ttsVoice: event.target.value })}
+                            >
+                              {!ttsVoices.some(
+                                (voice) => voice.voiceId === state.settings.ttsVoice,
+                              ) && (
+                                <option value={state.settings.ttsVoice}>
+                                  {state.settings.ttsVoice}
+                                </option>
+                              )}
+                              {ttsVoices.map((voice) => (
+                                <option key={voice.voiceId} value={voice.voiceId}>
+                                  {voice.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <Toggle
+                            checked={state.settings.ttsAutoplay}
+                            onChange={(ttsAutoplay) => updateSettings({ ttsAutoplay })}
+                            label="Autoplay new replies"
+                          />
+                          <label className="voice-speed">
+                            <span>
+                              Reading speed <b>{state.settings.ttsSpeed.toFixed(2)}×</b>
+                            </span>
+                            <input
+                              type="range"
+                              min="0.7"
+                              max="1.5"
+                              step="0.05"
+                              value={state.settings.ttsSpeed}
+                              onChange={(event) =>
+                                updateSettings({ ttsSpeed: Number(event.target.value) })
+                              }
+                            />
+                          </label>
+                          <div className="voice-actions">
+                            <button
+                              onClick={() =>
+                                void playTtsMessage({
+                                  messageId: "voice-preview",
+                                  text: "Brainworm reporting from the margins. The roots look interesting down here.",
+                                  voice: state.settings.ttsVoice,
+                                  speed: state.settings.ttsSpeed,
+                                })
+                              }
+                            >
+                              <VolumeIcon />
+                              Test voice
+                            </button>
+                            <button onClick={() => void clearTtsCache()}>
+                              <TrashIcon />
+                              Clear audio cache
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </SettingSection>
+                  )}
 
-                {settingsTab === "data" && (
-                <SettingSection title="Local library" description="Threads are stored only in this browser. xAI storage is disabled for API calls.">
-                  <button className="danger-button" onClick={clearAll}><TrashIcon />Clear every thread</button>
-                </SettingSection>
-                )}
+                  {settingsTab === "workspaces" && (
+                    <>
+                      <SettingSection
+                        title="Code grove"
+                        description="A Grok Build-inspired workflow with browser-safe limits and xAI's isolated Python runner."
+                      >
+                        <Toggle
+                          checked={state.settings.appMode === "code"}
+                          onChange={(enabled) => setAppMode(enabled ? "code" : "chat")}
+                          label="Enable coding workspace"
+                        />
+                        {state.settings.appMode === "code" && (
+                          <>
+                            <div className="mcp-card">
+                              <div className="mcp-card__status">
+                                <span
+                                  className={`connection-dot ${health?.mcpConfigured ? "is-on" : ""}`}
+                                />
+                                <div>
+                                  <b>
+                                    {health?.mcpConfigured
+                                      ? `${health.mcpLabel} workspace ready`
+                                      : "Workspace MCP not configured"}
+                                  </b>
+                                  <small>
+                                    {health?.mcpReadOnlyConfigured
+                                      ? "Plan/Verify read-only policy ready"
+                                      : "Plan/Verify use attached context only"}
+                                  </small>
+                                </div>
+                              </div>
+                              <Toggle
+                                checked={state.settings.mcpEnabled}
+                                onChange={(mcpEnabled) => updateSettings({ mcpEnabled })}
+                                label="Arm MCP tools for requests"
+                                disabled={!health?.mcpConfigured}
+                              />
+                            </div>
+                            <div className="code-safety-note">
+                              <CodeIcon />
+                              <span>
+                                {state.settings.mcpEnabled && health?.mcpConfigured
+                                  ? "Build may use only the server allowlist. Plan and Verify receive only the read-only allowlist. xAI does not yet support per-call MCP approvals."
+                                  : "Attached files remain read-only context. Add the MCP environment variables to let Brainworm inspect, patch, and verify a real workspace."}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                      </SettingSection>
+
+                      <SettingSection
+                        title="Imagine studio"
+                        description="Native Grok Imagine generation and editing, adapted from Wordmark’s media tool flow."
+                      >
+                        <div className="imagine-setting-card">
+                          <button onClick={() => setAppMode("imagine")}>
+                            <ImageIcon />
+                            Open Imagine studio
+                          </button>
+                          <span>
+                            {state.settings.imagineModel.endsWith("quality") ? "Quality" : "Fast"} ·{" "}
+                            {state.settings.imagineResolution.toUpperCase()} ·{" "}
+                            {state.settings.imagineAspectRatio}
+                          </span>
+                        </div>
+                      </SettingSection>
+                    </>
+                  )}
+
+                  {settingsTab === "theme" && (
+                    <SettingSection
+                      title="Reading light"
+                      description="Both palettes stay rooted in moss, clay, bark, and paper."
+                    >
+                      <div className="theme-choice">
+                        <button
+                          className={state.settings.theme === "paper" ? "is-on" : ""}
+                          onClick={() => updateSettings({ theme: "paper" })}
+                        >
+                          <SunIcon />
+                          Parchment
+                        </button>
+                        <button
+                          className={state.settings.theme === "night" ? "is-on" : ""}
+                          onClick={() => updateSettings({ theme: "night" })}
+                        >
+                          <MoonIcon />
+                          Night soil
+                        </button>
+                      </div>
+                    </SettingSection>
+                  )}
+
+                  {settingsTab === "data" && (
+                    <SettingSection
+                      title="Local library"
+                      description="Threads are stored only in this browser. xAI storage is disabled for API calls."
+                    >
+                      <button className="danger-button" onClick={clearAll}>
+                        <TrashIcon />
+                        Clear every thread
+                      </button>
+                    </SettingSection>
+                  )}
                 </div>
               </div>
             )}
@@ -1281,11 +1675,38 @@ export function BrainwormApp() {
       )}
 
       <nav className="mobile-nav" aria-label="Mobile navigation">
-        <button onClick={newConversation}><PlusIcon /><span>New</span></button>
-        <button className={panel === "history" ? "is-active" : ""} onClick={() => setPanel((current) => current === "history" ? null : "history")}><LibraryIcon /><span>Library</span></button>
-        <button className={state.settings.appMode === "code" ? "is-active" : ""} onClick={() => setAppMode(state.settings.appMode === "code" ? "chat" : "code")}><CodeIcon /><span>Code</span></button>
-        <button className={state.settings.appMode === "imagine" ? "is-active" : ""} onClick={() => setAppMode(state.settings.appMode === "imagine" ? "chat" : "imagine")}><ImageIcon /><span>Imagine</span></button>
-        <button className={panel === "settings" ? "is-active" : ""} onClick={() => setPanel((current) => current === "settings" ? null : "settings")}><SettingsIcon /><span>Setup</span></button>
+        <button onClick={newConversation}>
+          <PlusIcon />
+          <span>New</span>
+        </button>
+        <button
+          className={panel === "history" ? "is-active" : ""}
+          onClick={() => setPanel((current) => (current === "history" ? null : "history"))}
+        >
+          <LibraryIcon />
+          <span>Library</span>
+        </button>
+        <button
+          className={state.settings.appMode === "code" ? "is-active" : ""}
+          onClick={() => setAppMode(state.settings.appMode === "code" ? "chat" : "code")}
+        >
+          <CodeIcon />
+          <span>Code</span>
+        </button>
+        <button
+          className={state.settings.appMode === "imagine" ? "is-active" : ""}
+          onClick={() => setAppMode(state.settings.appMode === "imagine" ? "chat" : "imagine")}
+        >
+          <ImageIcon />
+          <span>Imagine</span>
+        </button>
+        <button
+          className={panel === "settings" ? "is-active" : ""}
+          onClick={() => setPanel((current) => (current === "settings" ? null : "settings"))}
+        >
+          <SettingsIcon />
+          <span>Setup</span>
+        </button>
       </nav>
     </div>
   );
@@ -1303,8 +1724,14 @@ function RailButton({
   onClick: () => void;
 }) {
   return (
-    <button className={`rail__button ${active ? "is-active" : ""}`} onClick={onClick} aria-label={label} title={label}>
-      {children}<span>{label}</span>
+    <button
+      className={`rail__button ${active ? "is-active" : ""}`}
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+    >
+      {children}
+      <span>{label}</span>
     </button>
   );
 }
@@ -1320,7 +1747,9 @@ function SettingSection({
 }) {
   return (
     <section className="setting-section">
-      <h3>{title}</h3><p>{description}</p>{children}
+      <h3>{title}</h3>
+      <p>{description}</p>
+      {children}
     </section>
   );
 }
@@ -1339,8 +1768,15 @@ function Toggle({
   return (
     <label className={`toggle-row ${disabled ? "is-disabled" : ""}`}>
       <span>{label}</span>
-      <input type="checkbox" checked={checked} disabled={disabled} onChange={(event) => onChange(event.target.checked)} />
-      <span className="toggle" aria-hidden="true"><span /></span>
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      <span className="toggle" aria-hidden="true">
+        <span />
+      </span>
     </label>
   );
 }

@@ -48,7 +48,11 @@ export function getTtsServerSnapshot(): TtsPlaybackState {
 
 export async function playTtsMessage(request: SpeechRequest): Promise<void> {
   autoplayQueue.length = 0;
-  if (active?.messageId === request.messageId && active.voice === request.voice && active.speed === request.speed) {
+  if (
+    active?.messageId === request.messageId &&
+    active.voice === request.voice &&
+    active.speed === request.speed
+  ) {
     if (snapshot.status === "playing") {
       active.audio.pause();
       emit({ messageId: request.messageId, status: "paused", error: null });
@@ -125,17 +129,29 @@ async function startSpeech(request: SpeechRequest, preserveQueue: boolean): Prom
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     active = { ...request, key, audio, url };
-    audio.addEventListener("ended", () => {
-      const finishedId = active?.messageId ?? request.messageId;
-      disposeActive();
-      emit({ messageId: finishedId, status: "idle", error: null });
-      window.setTimeout(() => void playNextAutoplay(), 300);
-    }, { once: true });
-    audio.addEventListener("error", () => {
-      disposeActive();
-      emit({ messageId: request.messageId, status: "error", error: "That audio clip could not be played." });
-      window.setTimeout(() => void playNextAutoplay(), 300);
-    }, { once: true });
+    audio.addEventListener(
+      "ended",
+      () => {
+        const finishedId = active?.messageId ?? request.messageId;
+        disposeActive();
+        emit({ messageId: finishedId, status: "idle", error: null });
+        window.setTimeout(() => void playNextAutoplay(), 300);
+      },
+      { once: true },
+    );
+    audio.addEventListener(
+      "error",
+      () => {
+        disposeActive();
+        emit({
+          messageId: request.messageId,
+          status: "error",
+          error: "That audio clip could not be played.",
+        });
+        window.setTimeout(() => void playNextAutoplay(), 300);
+      },
+      { once: true },
+    );
     await audio.play();
     emit({ messageId: request.messageId, status: "playing", error: null });
   } catch (error) {
@@ -144,7 +160,9 @@ async function startSpeech(request: SpeechRequest, preserveQueue: boolean): Prom
     emit({
       messageId: request.messageId,
       status: blocked ? "idle" : "error",
-      error: blocked ? "Press play once to let this browser read replies aloud." : errorMessage(error),
+      error: blocked
+        ? "Press play once to let this browser read replies aloud."
+        : errorMessage(error),
     });
   }
 }
@@ -172,7 +190,12 @@ function disposeActive(): void {
   active = null;
 }
 
-async function getOrCreateAudio(key: string, text: string, voice: string, speed: number): Promise<Blob> {
+async function getOrCreateAudio(
+  key: string,
+  text: string,
+  voice: string,
+  speed: number,
+): Promise<Blob> {
   const inMemory = memoryCache.get(key);
   if (inMemory) return inMemory;
 
@@ -191,12 +214,15 @@ async function getOrCreateAudio(key: string, text: string, voice: string, speed:
     body: JSON.stringify({ text, voice, speed }),
   });
   if (!response.ok) {
-    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
     throw new Error(payload?.error || `Speech generation failed (${response.status}).`);
   }
   const blob = await response.blob();
   memoryCache.set(key, blob);
-  await cache?.put(cacheRequest, new Response(blob, { headers: { "Content-Type": blob.type || "audio/mpeg" } }));
+  await cache?.put(
+    cacheRequest,
+    new Response(blob, { headers: { "Content-Type": blob.type || "audio/mpeg" } }),
+  );
   return blob;
 }
 

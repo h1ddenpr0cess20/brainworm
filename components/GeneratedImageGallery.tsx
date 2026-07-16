@@ -6,7 +6,13 @@ import { loadImageBlob } from "@/lib/imageStorage";
 import { DownloadIcon } from "./Icons";
 
 export function GeneratedImageGallery({ images }: { images: GeneratedImageRef[] }) {
-  return <div className={`generated-gallery ${images.length > 1 ? "is-grid" : ""}`}>{images.map((image) => <GeneratedImageCard key={image.id} image={image} />)}</div>;
+  return (
+    <div className={`generated-gallery ${images.length > 1 ? "is-grid" : ""}`}>
+      {images.map((image) => (
+        <GeneratedImageCard key={image.id} image={image} />
+      ))}
+    </div>
+  );
 }
 
 function GeneratedImageCard({ image }: { image: GeneratedImageRef }) {
@@ -39,10 +45,26 @@ function GeneratedImageCard({ image }: { image: GeneratedImageRef }) {
 
   return (
     <figure className="generated-image">
-      {url ? <img src={url} alt={image.prompt} /> : <div className="generated-image__loading"><span /></div>}
+      {url ? (
+        // Blob URLs are local IndexedDB assets and cannot be optimized by next/image.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt={image.prompt} />
+      ) : (
+        <div className="generated-image__loading">
+          <span />
+        </div>
+      )}
       <figcaption>
-        <span>{image.kind} · {image.model.endsWith("quality") ? "quality" : "fast"} · {image.resolution}</span>
-        <button onClick={() => void download()} aria-label="Download generated image" title="Download image"><DownloadIcon /></button>
+        <span>
+          {image.kind} · {image.model.endsWith("quality") ? "quality" : "fast"} · {image.resolution}
+        </span>
+        <button
+          onClick={() => void download()}
+          aria-label="Download generated image"
+          title="Download image"
+        >
+          <DownloadIcon />
+        </button>
       </figcaption>
     </figure>
   );

@@ -33,19 +33,44 @@ export function TtsControls({ messageId, text, voice, speed }: TtsControlsProps)
         aria-label={status === "playing" ? "Pause voice" : "Play voice"}
         title={status === "playing" ? "Pause voice" : "Play voice"}
       >
-        {status === "loading" ? <span className="tts-spinner" /> : status === "playing" ? <PauseIcon /> : <PlayIcon />}
+        {status === "loading" ? (
+          <span className="tts-spinner" />
+        ) : status === "playing" ? (
+          <PauseIcon />
+        ) : (
+          <PlayIcon />
+        )}
       </button>
       {(status === "playing" || status === "paused") && (
-        <button onClick={() => stopTtsMessage(messageId)} aria-label="Stop voice" title="Stop voice"><StopIcon /></button>
+        <button
+          onClick={() => stopTtsMessage(messageId)}
+          aria-label="Stop voice"
+          title="Stop voice"
+        >
+          <StopIcon />
+        </button>
       )}
       <button
         onClick={() => void downloadTtsMessage(request)}
         disabled={status === "loading"}
         aria-label="Download voice clip"
         title="Download voice clip"
-      ><DownloadIcon /></button>
-      <span className={`tts-controls__status ${status === "error" ? "is-error" : ""}`} aria-live="polite">
-        {status === "loading" ? "growing a voice…" : status === "playing" ? voice : status === "paused" ? "paused" : isActive && playback.error ? playback.error : ""}
+      >
+        <DownloadIcon />
+      </button>
+      <span
+        className={`tts-controls__status ${status === "error" ? "is-error" : ""}`}
+        aria-live="polite"
+      >
+        {status === "loading"
+          ? "growing a voice…"
+          : status === "playing"
+            ? voice
+            : status === "paused"
+              ? "paused"
+              : isActive && playback.error
+                ? playback.error
+                : ""}
       </span>
     </div>
   );

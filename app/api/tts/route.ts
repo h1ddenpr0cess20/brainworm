@@ -20,7 +20,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let body: TtsRequest;
   try {
-    body = await request.json() as TtsRequest;
+    body = (await request.json()) as TtsRequest;
   } catch {
     return Response.json({ error: "The speech request is not valid JSON." }, { status: 400 });
   }
@@ -30,7 +30,10 @@ export async function POST(request: Request): Promise<Response> {
   const speed = typeof body.speed === "number" ? body.speed : 1;
 
   if (!text || text.length > 15_000) {
-    return Response.json({ error: "Speech text must contain 1–15,000 characters." }, { status: 400 });
+    return Response.json(
+      { error: "Speech text must contain 1–15,000 characters." },
+      { status: 400 },
+    );
   }
   if (!VOICE_ID_PATTERN.test(voice)) {
     return Response.json({ error: "The voice ID is invalid." }, { status: 400 });
@@ -80,7 +83,10 @@ export async function POST(request: Request): Promise<Response> {
 
 async function readUpstreamError(response: Response): Promise<string> {
   try {
-    const payload = await response.json() as { error?: { message?: string } | string; message?: string };
+    const payload = (await response.json()) as {
+      error?: { message?: string } | string;
+      message?: string;
+    };
     if (typeof payload.error === "string") return payload.error;
     return payload.error?.message || payload.message || "";
   } catch {

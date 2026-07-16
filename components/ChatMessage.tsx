@@ -42,12 +42,16 @@ export function ChatMessage({
   };
 
   return (
-    <article className={`message message--${message.role} ${message.status === "error" ? "message--error" : ""}`}>
+    <article
+      className={`message message--${message.role} ${message.status === "error" ? "message--error" : ""}`}
+    >
       <div className="message__gutter">
         {isAssistant ? (
           <BrainLogo className="message__avatar" />
         ) : (
-          <span className="message__initial" aria-label="You">Y</span>
+          <span className="message__initial" aria-label="You">
+            Y
+          </span>
         )}
       </div>
       <div className="message__body">
@@ -63,7 +67,9 @@ export function ChatMessage({
         <div className="message__content">
           {message.attachments && message.attachments.length > 0 && (
             <div className="message__attachments">
-              {message.attachments.map((name) => <span key={name}>@{name}</span>)}
+              {message.attachments.map((name) => (
+                <span key={name}>@{name}</span>
+              ))}
             </div>
           )}
           {isAssistant ? (
@@ -71,7 +77,9 @@ export function ChatMessage({
               remarkPlugins={[remarkGfm]}
               components={{
                 a: ({ children, ...props }) => (
-                  <a {...props} target="_blank" rel="noreferrer">{children}</a>
+                  <a {...props} target="_blank" rel="noreferrer">
+                    {children}
+                  </a>
                 ),
               }}
             >
@@ -80,16 +88,21 @@ export function ChatMessage({
           ) : (
             <p>{message.content}</p>
           )}
-          {message.status === "streaming" && <span className="message__cursor" aria-label="Writing" />}
+          {message.status === "streaming" && (
+            <span className="message__cursor" aria-label="Writing" />
+          )}
         </div>
-        {message.images && message.images.length > 0 && <GeneratedImageGallery images={message.images} />}
+        {message.images && message.images.length > 0 && (
+          <GeneratedImageGallery images={message.images} />
+        )}
         {message.sources && message.sources.length > 0 && (
           <div className="message__sources" aria-label="Sources">
             <span>Breadcrumbs</span>
             <div>
               {message.sources.map((source, index) => (
                 <a key={source.url} href={source.url} target="_blank" rel="noreferrer">
-                  <b>{index + 1}</b>{source.title}
+                  <b>{index + 1}</b>
+                  {source.title}
                 </a>
               ))}
             </div>
@@ -97,7 +110,12 @@ export function ChatMessage({
         )}
         {message.status !== "streaming" && message.content && (
           <div className="message__actions">
-            <button className="message__action" onClick={copy} aria-label="Copy message" title="Copy message">
+            <button
+              className="message__action"
+              onClick={copy}
+              aria-label="Copy message"
+              title="Copy message"
+            >
               <CopyIcon />
               <span>{copied ? "Copied" : "Copy"}</span>
             </button>
@@ -108,7 +126,10 @@ export function ChatMessage({
                 disabled={busy}
                 aria-label="Regenerate reply"
                 title="Regenerate reply"
-              ><RegenerateIcon /><span>Regenerate</span></button>
+              >
+                <RegenerateIcon />
+                <span>Regenerate</span>
+              </button>
             )}
             {isAssistant && onBranch && (
               <button
@@ -117,25 +138,42 @@ export function ChatMessage({
                 disabled={busy}
                 aria-label="Branch conversation from here"
                 title="Branch conversation from here"
-              ><BranchIcon /><span>Branch</span></button>
+              >
+                <BranchIcon />
+                <span>Branch</span>
+              </button>
             )}
             {versionCount > 1 && onSelectVariant && (
-              <span className="message__versions" aria-label={`Reply version ${currentVersion} of ${versionCount}`}>
+              <span
+                className="message__versions"
+                aria-label={`Reply version ${currentVersion} of ${versionCount}`}
+              >
                 <button
                   disabled={currentVersion <= 1}
                   onClick={() => onSelectVariant(message.id, (message.variantIndex ?? 0) - 1)}
                   aria-label="Previous reply version"
-                >‹</button>
-                <span>{currentVersion}/{versionCount}</span>
+                >
+                  ‹
+                </button>
+                <span>
+                  {currentVersion}/{versionCount}
+                </span>
                 <button
                   disabled={currentVersion >= versionCount}
                   onClick={() => onSelectVariant(message.id, (message.variantIndex ?? 0) + 1)}
                   aria-label="Next reply version"
-                >›</button>
+                >
+                  ›
+                </button>
               </span>
             )}
             {isAssistant && tts?.enabled && message.status === "complete" && (
-              <TtsControls messageId={message.id} text={message.content} voice={tts.voice} speed={tts.speed} />
+              <TtsControls
+                messageId={message.id}
+                text={message.content}
+                voice={tts.voice}
+                speed={tts.speed}
+              />
             )}
           </div>
         )}

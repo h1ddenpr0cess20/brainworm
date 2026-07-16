@@ -74,10 +74,7 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const mcpTool =
-    appMode === "code" && body.mcpEnabled
-      ? buildMcpTool(codeSessionMode)
-      : null;
+  const mcpTool = appMode === "code" && body.mcpEnabled ? buildMcpTool(codeSessionMode) : null;
   const systemPrompt =
     appMode === "code"
       ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(Boolean(mcpTool), codeSessionMode !== "build")}${formatFiles(files)}`
@@ -99,10 +96,7 @@ export async function POST(request: Request): Promise<Response> {
       },
       body: JSON.stringify({
         model: process.env.XAI_MODEL || "grok-4.5",
-        input: [
-          { role: "system", content: systemPrompt },
-          ...messages,
-        ],
+        input: [{ role: "system", content: systemPrompt }, ...messages],
         reasoning: { effort: reasoningEffort },
         tools: tools.length ? tools : undefined,
         stream: true,
@@ -252,7 +246,14 @@ function buildMcpTool(mode: CodeSessionMode): RemoteMcpTool | null {
 
 function parseToolList(value: string | undefined): string[] {
   if (!value) return [];
-  return [...new Set(value.split(",").map((item) => item.trim()).filter(Boolean))].slice(0, 64);
+  return [
+    ...new Set(
+      value
+        .split(",")
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  ].slice(0, 64);
 }
 
 function isSecureUrl(value: string): boolean {
@@ -311,7 +312,7 @@ async function safeUpstreamError(upstream: Response): Promise<string> {
     const message =
       typeof payload.error === "string"
         ? payload.error
-        : payload.error?.message ?? payload.message;
+        : (payload.error?.message ?? payload.message);
     if (message) return `xAI: ${message}`;
   } catch {
     // Fall through to the status-based message.

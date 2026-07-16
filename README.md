@@ -10,7 +10,7 @@ Wordmark's xAI TTS and Grok Imagine implementations are the behavioral reference
 
 ## Run locally
 
-Requires Node.js 20.9 or newer.
+Requires Node.js 22 or newer (`.nvmrc` is included).
 
 ```bash
 npm install
@@ -27,6 +27,25 @@ Set `XAI_API_KEY` in `.env.local`. The same key powers Responses, TTS, voice dis
 3. Add the optional MCP variables from `.env.example` if Code mode should access a remote workspace.
 4. Deploy with the standard Next.js preset.
 
+`vercel.json` pins the install and build commands while each long-running API
+route declares its own function duration. Add secrets through the Vercel project
+settings; do not commit `.env.local`.
+
+## Run with Docker
+
+The production image uses Next.js standalone output and runs as an unprivileged
+user. Runtime credentials are not included in the image.
+
+```bash
+cp .env.example .env.local
+# Add XAI_API_KEY to .env.local, then:
+docker compose up --build
+```
+
+Open `http://localhost:3000`. The image exposes `/api/health` as its container
+health check. Put a streaming-capable reverse proxy in front of the container
+for a public self-hosted deployment.
+
 No xAI credential is sent to the browser. Chat requests use `store: false`; conversation metadata stays in `localStorage`, generated images use IndexedDB, and synthesized voice clips use the browser Cache API.
 
 ## MCP workspace
@@ -36,10 +55,18 @@ Brainworm connects xAI's Responses API to a remote HTTPS MCP server. Build recei
 ## Verification
 
 ```bash
+npm run format:check
+npm run lint
 npm run typecheck
-npm test
+npm run test:coverage
+npm run audit
 npm run build
 ```
+
+Run the full local quality gate with `npm run check`. Use `npm run format` and
+`npm run lint:fix` to apply safe automated fixes. GitHub Actions repeats the
+quality gate, creates the production Next.js build, and verifies the Docker
+image on every pull request and push to `main`.
 
 ## References
 

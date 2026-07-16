@@ -39,7 +39,9 @@ type XaiEventPayload = {
   };
 };
 
-export function parseXaiEvent(event: SseEvent):
+export function parseXaiEvent(
+  event: SseEvent,
+):
   | { kind: "delta"; delta: string }
   | { kind: "complete"; responseId?: string; sources: Source[] }
   | { kind: "error"; message: string }

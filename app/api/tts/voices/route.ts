@@ -23,7 +23,7 @@ export async function GET(): Promise<Response> {
     return Response.json({ error: "The xAI voice catalog is unavailable." }, { status: 502 });
   }
 
-  const payload = await upstream.json() as { voices?: XaiVoice[] };
+  const payload = (await upstream.json()) as { voices?: XaiVoice[] };
   const voices: TtsVoice[] = (payload.voices ?? [])
     .filter((voice) => typeof voice.voice_id === "string" && typeof voice.name === "string")
     .map((voice) => ({

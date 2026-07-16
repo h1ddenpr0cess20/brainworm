@@ -19,10 +19,22 @@ describe("Brainworm prompt helpers", () => {
     expect(mcpModeInstruction(true, true)).toContain("read-only");
   });
 
+  it("returns distinct instructions for every coding mode", () => {
+    expect(codingModeInstruction("build")).toContain("implementation-ready");
+    expect(codingModeInstruction("verify")).toContain("findings first");
+  });
+
+  it("describes unavailable, read-only, and armed MCP states", () => {
+    expect(mcpModeInstruction(false, false)).toContain("No workspace MCP");
+    expect(mcpModeInstruction(true, true)).toContain("read-only");
+    expect(mcpModeInstruction(true, false)).toContain("armed");
+  });
+
   it("creates a compact title from the opening message", () => {
     expect(makeConversationTitle("  how do tree roots share nutrients? ")).toBe(
       "How do tree roots share nutrients?",
     );
     expect(makeConversationTitle("x".repeat(80))).toHaveLength(46);
+    expect(makeConversationTitle("   ")).toBe("Fresh burrow");
   });
 });

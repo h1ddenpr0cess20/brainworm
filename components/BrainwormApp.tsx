@@ -32,8 +32,10 @@ import {
   saveImageBlob,
 } from "@/lib/imageStorage";
 import { autoplayTtsMessage, clearTtsCache, playTtsMessage, stopTtsMessage } from "@/lib/ttsClient";
+import { collectGalleryItems } from "@/lib/gallery";
 import { BrainLogo } from "./BrainLogo";
 import { ChatMessage } from "./ChatMessage";
+import { GalleryPanel } from "./GalleryPanel";
 import {
   CloseIcon,
   CodeIcon,
@@ -54,6 +56,7 @@ import {
 } from "./Icons";
 
 type Panel = "history" | "settings" | null;
+type LibraryTab = "threads" | "gallery";
 type SettingsTab = "model" | "tools" | "voice" | "workspaces" | "theme" | "data";
 type Health = {
   model: string;
@@ -225,6 +228,7 @@ export function BrainwormApp() {
   const [state, setState] = useState<PersistedState>(() => makeInitialState());
   const [hydrated, setHydrated] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>("threads");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("model");
   const [input, setInput] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -1096,6 +1100,11 @@ export function BrainwormApp() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [historyQuery, state.conversations]);
 
+  const galleryItems = useMemo(
+    () => collectGalleryItems(state.conversations),
+    [state.conversations],
+  );
+
   const turns =
     activeConversation?.messages.filter((message) => message.role === "user").length ?? 0;
 
@@ -1137,9 +1146,7 @@ export function BrainwormApp() {
         >
           <SettingsIcon />
         </RailButton>
-        <div className="rail__model" title={health?.model ?? "grok-4.5"}>
-          G4.5
-        </div>
+        <div className="rail__model">G4.5</div>
       </aside>
 
       <main className="main-shell">
@@ -1368,7 +1375,7 @@ export function BrainwormApp() {
             {(pendingFiles.length > 0 || pendingImage) && (
               <div className="composer__files">
                 {pendingFiles.map((file) => (
-                  <span key={file.name} title={`${Math.ceil(file.size / 1024)} KB`}>
+                  <span key={file.name}>
                     @{file.name}
                     <button
                       onClick={() =>
@@ -1383,7 +1390,7 @@ export function BrainwormApp() {
                   </span>
                 ))}
                 {pendingImage && (
-                  <span title="This image will be edited with Grok Imagine">
+                  <span>
                     @{pendingImage.name}
                     <button
                       onClick={() => setPendingImage(null)}
@@ -1485,7 +1492,7 @@ export function BrainwormApp() {
                       <button
                         className="composer__latest"
                         onClick={() => void attachLatestImage()}
-                        title="Edit latest image"
+                        aria-label="Edit latest image"
                       >
                         Latest
                       </button>
@@ -1494,11 +1501,6 @@ export function BrainwormApp() {
                     className="composer__attach"
                     onClick={() => fileInputRef.current?.click()}
                     aria-label={
-                      state.settings.appMode === "imagine"
-                        ? "Attach an image to edit"
-                        : "Attach source files"
-                    }
-                    title={
                       state.settings.appMode === "imagine"
                         ? "Attach an image to edit"
                         : "Attach source files"
@@ -1555,7 +1557,34 @@ export function BrainwormApp() {
               </button>
             </div>
 
-            {panel === "history" ? (
+            {panel === "history" && (
+              <nav className="library-tabs" aria-label="Library sections">
+                {(
+                  [
+                    ["threads", "Threads"],
+                    ["gallery", "Gallery"],
+                  ] as const
+                ).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    className={libraryTab === tab ? "is-active" : ""}
+                    onClick={() => setLibraryTab(tab)}
+                    aria-current={libraryTab === tab ? "page" : undefined}
+                  >
+                    {label}
+                    {tab === "gallery" && galleryItems.length > 0 && (
+                      <small>{galleryItems.length}</small>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            )}
+
+            {panel === "history" && libraryTab === "gallery" ? (
+              <div className="gallery-panel">
+                <GalleryPanel items={galleryItems} />
+              </div>
+            ) : panel === "history" ? (
               <div className="history-panel">
                 <label className="history-search">
                   <SearchIcon />
@@ -2032,7 +2061,6 @@ function RailButton({
       className={`rail__button ${active ? "is-active" : ""}`}
       onClick={onClick}
       aria-label={label}
-      title={label}
     >
       {children}
       <span>{label}</span>

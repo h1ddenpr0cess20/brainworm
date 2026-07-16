@@ -1,5 +1,9 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { imageFileName } from "./gallery";
+import type { GeneratedImageRef } from "./types";
+
 const DATABASE_NAME = "brainworm-media";
 const STORE_NAME = "images";
 const DATABASE_VERSION = 1;
@@ -29,6 +33,43 @@ export async function clearImageBlobs(): Promise<void> {
   const database = await openDatabase();
   await transactionPromise(database, "readwrite", (store) => store.clear());
   database.close();
+}
+
+/**
+ * Object URL for a stored image, revoked when the id changes or the caller
+ * unmounts. Returns null until the blob is read out of IndexedDB.
+ */
+export function useImageBlobUrl(id: string): string | null {
+  const [loaded, setLoaded] = useState<{ id: string; url: string } | null>(null);
+
+  useEffect(() => {
+    let objectUrl = "";
+    let cancelled = false;
+    void loadImageBlob(id).then((blob) => {
+      if (!blob || cancelled) return;
+      objectUrl = URL.createObjectURL(blob);
+      setLoaded({ id, url: objectUrl });
+    });
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [id]);
+
+  // Tracking the id alongside the url keeps a revoked url from a previous id
+  // out of the render that follows an id change.
+  return loaded?.id === id ? loaded.url : null;
+}
+
+export async function downloadImage(image: GeneratedImageRef): Promise<void> {
+  const blob = await loadImageBlob(image.id);
+  if (!blob) return;
+  const downloadUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = downloadUrl;
+  anchor.download = imageFileName(image);
+  anchor.click();
+  window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1_000);
 }
 
 export function base64ToBlob(base64: string, mimeType: string): Blob {

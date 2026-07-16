@@ -1,65 +1,52 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { GeneratedImageRef } from "@/lib/types";
-import { loadImageBlob } from "@/lib/imageStorage";
+import { imageMeta } from "@/lib/gallery";
+import { downloadImage, useImageBlobUrl } from "@/lib/imageStorage";
 import { DownloadIcon } from "./Icons";
+import { ImageLightbox } from "./ImageLightbox";
 
 export function GeneratedImageGallery({ images }: { images: GeneratedImageRef[] }) {
+  const [zoomed, setZoomed] = useState<GeneratedImageRef | null>(null);
+
   return (
     <div className={`generated-gallery ${images.length > 1 ? "is-grid" : ""}`}>
       {images.map((image) => (
-        <GeneratedImageCard key={image.id} image={image} />
+        <GeneratedImageCard key={image.id} image={image} onZoom={setZoomed} />
       ))}
+      {zoomed && <ImageLightbox image={zoomed} onClose={() => setZoomed(null)} />}
     </div>
   );
 }
 
-function GeneratedImageCard({ image }: { image: GeneratedImageRef }) {
-  const [url, setUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    let objectUrl = "";
-    let cancelled = false;
-    void loadImageBlob(image.id).then((blob) => {
-      if (!blob || cancelled) return;
-      objectUrl = URL.createObjectURL(blob);
-      setUrl(objectUrl);
-    });
-    return () => {
-      cancelled = true;
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [image.id]);
-
-  const download = async () => {
-    const blob = await loadImageBlob(image.id);
-    if (!blob) return;
-    const downloadUrl = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = downloadUrl;
-    anchor.download = `brainworm-${image.kind}-${image.id}.${image.mimeType.includes("png") ? "png" : image.mimeType.includes("webp") ? "webp" : "jpg"}`;
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1_000);
-  };
+function GeneratedImageCard({
+  image,
+  onZoom,
+}: {
+  image: GeneratedImageRef;
+  onZoom: (image: GeneratedImageRef) => void;
+}) {
+  const url = useImageBlobUrl(image.id);
 
   return (
     <figure className="generated-image">
       {url ? (
-        // Blob URLs are local IndexedDB assets and cannot be optimized by next/image.
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt={image.prompt} />
+        <button className="generated-image__zoom" onClick={() => onZoom(image)} title="View full size">
+          {/* Blob URLs are local IndexedDB assets and cannot be optimized by next/image. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={url} alt={image.prompt} />
+        </button>
       ) : (
         <div className="generated-image__loading">
           <span />
         </div>
       )}
       <figcaption>
-        <span>
-          {image.kind} · {image.model.endsWith("quality") ? "quality" : "fast"} · {image.resolution}
-        </span>
+        <span title={image.prompt}>{image.prompt}</span>
+        <small>{imageMeta(image)}</small>
         <button
-          onClick={() => void download()}
+          onClick={() => void downloadImage(image)}
           aria-label="Download generated image"
           title="Download image"
         >

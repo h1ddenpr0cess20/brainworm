@@ -28,8 +28,10 @@ import {
   saveImageBlob,
 } from "@/lib/imageStorage";
 import { autoplayTtsMessage, clearTtsCache, playTtsMessage, stopTtsMessage } from "@/lib/ttsClient";
+import { collectGalleryItems } from "@/lib/gallery";
 import { BrainLogo } from "./BrainLogo";
 import { ChatMessage } from "./ChatMessage";
+import { GalleryPanel } from "./GalleryPanel";
 import {
   CloseIcon,
   CodeIcon,
@@ -50,6 +52,7 @@ import {
 } from "./Icons";
 
 type Panel = "history" | "settings" | null;
+type LibraryTab = "threads" | "gallery";
 type SettingsTab = "model" | "tools" | "voice" | "workspaces" | "theme" | "data";
 type Health = {
   configured: boolean;
@@ -195,6 +198,7 @@ export function BrainwormApp() {
   const [state, setState] = useState<PersistedState>(() => makeInitialState());
   const [hydrated, setHydrated] = useState(false);
   const [panel, setPanel] = useState<Panel>(null);
+  const [libraryTab, setLibraryTab] = useState<LibraryTab>("threads");
   const [settingsTab, setSettingsTab] = useState<SettingsTab>("model");
   const [input, setInput] = useState("");
   const [streamingMessageId, setStreamingMessageId] = useState<string | null>(null);
@@ -903,6 +907,8 @@ export function BrainwormApp() {
       .sort((a, b) => b.updatedAt - a.updatedAt);
   }, [historyQuery, state.conversations]);
 
+  const galleryItems = useMemo(() => collectGalleryItems(state.conversations), [state.conversations]);
+
   const turns =
     activeConversation?.messages.filter((message) => message.role === "user").length ?? 0;
 
@@ -1365,7 +1371,34 @@ export function BrainwormApp() {
               </button>
             </div>
 
-            {panel === "history" ? (
+            {panel === "history" && (
+              <nav className="library-tabs" aria-label="Library sections">
+                {(
+                  [
+                    ["threads", "Threads"],
+                    ["gallery", "Gallery"],
+                  ] as const
+                ).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    className={libraryTab === tab ? "is-active" : ""}
+                    onClick={() => setLibraryTab(tab)}
+                    aria-current={libraryTab === tab ? "page" : undefined}
+                  >
+                    {label}
+                    {tab === "gallery" && galleryItems.length > 0 && (
+                      <small>{galleryItems.length}</small>
+                    )}
+                  </button>
+                ))}
+              </nav>
+            )}
+
+            {panel === "history" && libraryTab === "gallery" ? (
+              <div className="gallery-panel">
+                <GalleryPanel items={galleryItems} />
+              </div>
+            ) : panel === "history" ? (
               <div className="history-panel">
                 <label className="history-search">
                   <SearchIcon />

@@ -1,7 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import {
+  Children,
+  isValidElement,
+  useRef,
+  useState,
+  type ComponentPropsWithoutRef,
+  type ReactNode,
+} from "react";
 import ReactMarkdown from "react-markdown";
+import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/types";
 import { BrainLogo } from "./BrainLogo";
@@ -22,6 +30,47 @@ type ChatMessageProps = {
   onBranch?: (messageId: string) => void;
   onSelectVariant?: (messageId: string, index: number) => void;
 };
+
+function codeLanguage(children: ReactNode): string | null {
+  for (const child of Children.toArray(children)) {
+    if (!isValidElement<{ className?: string }>(child)) continue;
+
+    const languageClass = child.props.className
+      ?.split(/\s+/)
+      .find((className) => className.startsWith("language-"));
+
+    if (languageClass) return languageClass.slice("language-".length);
+  }
+
+  return null;
+}
+
+function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
+  const [copied, setCopied] = useState(false);
+  const codeRef = useRef<HTMLPreElement>(null);
+  const language = codeLanguage(children);
+
+  const copy = async () => {
+    await navigator.clipboard.writeText(codeRef.current?.textContent ?? "");
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1200);
+  };
+
+  return (
+    <div className="message__code-block">
+      <div className="message__code-toolbar">
+        <span>{language ?? "code"}</span>
+        <button type="button" onClick={copy} aria-label="Copy code" title="Copy code">
+          <CopyIcon />
+          <span>{copied ? "Copied" : "Copy"}</span>
+        </button>
+      </div>
+      <pre {...props} ref={codeRef}>
+        {children}
+      </pre>
+    </div>
+  );
+}
 
 export function ChatMessage({
   message,
@@ -76,12 +125,14 @@ export function ChatMessage({
           {isAssistant ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
+              rehypePlugins={[rehypeHighlight]}
               components={{
                 a: ({ children, ...props }) => (
                   <a {...props} target="_blank" rel="noreferrer">
                     {children}
                   </a>
                 ),
+                pre: CodeBlock,
               }}
             >
               {message.content}

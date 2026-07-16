@@ -29,6 +29,8 @@ type ChatMessageProps = {
   onRegenerate?: (messageId: string) => void;
   onBranch?: (messageId: string) => void;
   onSelectVariant?: (messageId: string, index: number) => void;
+  onApprovePlan?: (messageId: string) => void;
+  onRequestPlanChanges?: (messageId: string) => void;
 };
 
 function codeLanguage(children: ReactNode): string | null {
@@ -79,6 +81,8 @@ export function ChatMessage({
   onRegenerate,
   onBranch,
   onSelectVariant,
+  onApprovePlan,
+  onRequestPlanChanges,
 }: ChatMessageProps) {
   const [copied, setCopied] = useState(false);
   const isAssistant = message.role === "assistant";
@@ -160,6 +164,45 @@ export function ChatMessage({
             </div>
           </div>
         )}
+        {message.tools && message.tools.length > 0 && (
+          <div className="message__tools" aria-label="Tool activity">
+            <span>Tools</span>
+            <div>
+              {message.tools.map((tool) => (
+                <span className={`is-${tool.status}`} key={tool.id}>
+                  <i />
+                  {tool.server ? `${tool.server} · ` : ""}
+                  {tool.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {isAssistant &&
+          message.codeMode === "plan" &&
+          message.status === "complete" &&
+          message.planState && (
+            <div className="message__plan-actions" aria-label="Plan approval">
+              {message.planState === "proposed" ? (
+                <>
+                  <button onClick={() => onApprovePlan?.(message.id)} disabled={busy}>
+                    Approve and implement
+                  </button>
+                  <button
+                    className="is-secondary"
+                    onClick={() => onRequestPlanChanges?.(message.id)}
+                    disabled={busy}
+                  >
+                    Request changes
+                  </button>
+                </>
+              ) : (
+                <span>
+                  {message.planState === "approved" ? "Plan approved" : "Changes requested"}
+                </span>
+              )}
+            </div>
+          )}
         {message.status !== "streaming" && message.content && (
           <div className="message__actions">
             <button

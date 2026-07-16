@@ -31,7 +31,11 @@ describe("xAI SSE parsing", () => {
   });
 
   it("handles stream completion, malformed JSON, and unknown events", () => {
-    expect(parseXaiEvent({ data: "[DONE]" })).toEqual({ kind: "complete", sources: [] });
+    expect(parseXaiEvent({ data: "[DONE]" })).toEqual({
+      kind: "complete",
+      sources: [],
+      tools: [],
+    });
     expect(parseXaiEvent({ data: "not-json" })).toBeNull();
     expect(parseXaiEvent({ data: '{"type":"response.queued"}' })).toBeNull();
   });
@@ -75,6 +79,7 @@ describe("xAI SSE parsing", () => {
       kind: "complete",
       responseId: "resp_1",
       sources: [{ title: "A field guide", url: "https://example.com/guide" }],
+      tools: [],
     });
   });
 
@@ -90,6 +95,44 @@ describe("xAI SSE parsing", () => {
     expect(parsed).toEqual({
       kind: "complete",
       sources: [{ title: "example.org", url: "https://www.example.org/path" }],
+      tools: [],
+    });
+  });
+
+  it("streams and completes MCP tool activity", () => {
+    expect(
+      parseXaiEvent({
+        data: JSON.stringify({
+          type: "response.output_item.added",
+          item: { type: "mcp_call", id: "tool_1", name: "read_file", server_label: "repo" },
+        }),
+      }),
+    ).toEqual({
+      kind: "tool",
+      tool: { id: "tool_1", name: "read_file", server: "repo", status: "running" },
+    });
+
+    expect(
+      parseXaiEvent({
+        data: JSON.stringify({
+          type: "response.completed",
+          response: {
+            output: [
+              {
+                type: "mcp_call",
+                id: "tool_1",
+                name: "read_file",
+                server_label: "repo",
+                status: "completed",
+              },
+            ],
+          },
+        }),
+      }),
+    ).toEqual({
+      kind: "complete",
+      sources: [],
+      tools: [{ id: "tool_1", name: "read_file", server: "repo", status: "complete" }],
     });
   });
 });

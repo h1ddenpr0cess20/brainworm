@@ -3,7 +3,7 @@
 Brainworm is a bookish xAI workspace built with Next.js for Vercel. It adapts the compact rail, local thread library, manuscript-like feed, and responsive behavior of Darkwords into an earth-toned interface with three native xAI workspaces:
 
 - **Chat** — streamed Grok 4.5 responses, reasoning effort, native web search, citations, and browser-local history.
-- **Code** — Grok Build-inspired Plan, Build, and Verify modes; attached source context; xAI code execution; and an optional remote MCP workspace with server-side tool allowlists.
+- **Code** — Normal, Plan, and Always-approve modes; attached source context; user-configured HTTPS MCP workspaces; structured tool activity; and plan approval before implementation.
 - **Imagine** — Grok Imagine generation and editing, fast or quality models, supported aspect ratios, 1K/2K output, local image persistence, and downloads.
 
 Wordmark's xAI TTS and Grok Imagine implementations are the behavioral reference for voice playback, cache handling, generation/edit request shapes, and media persistence. Each reader supplies their own xAI API key; Brainworm sends provider calls through Next.js server routes without storing the key on the server.
@@ -22,8 +22,8 @@ Open Settings → Model and enter your xAI API key. The same user-supplied key p
 ## Deploy to Vercel
 
 1. Import the repository into Vercel.
-2. Add the optional MCP variables from `.env.example` if Code mode should access a remote workspace.
-3. Deploy with the standard Next.js preset.
+2. Deploy with the standard Next.js preset.
+3. Add remote workspaces from Settings → Workspaces in the deployed app.
 
 `vercel.json` pins the install and build commands while each long-running API
 route declares its own function duration. No deployment-wide xAI key is needed;
@@ -43,11 +43,16 @@ Open `http://localhost:3000`. The image exposes `/api/health` as its container
 health check. Put a streaming-capable reverse proxy in front of the container
 for a public self-hosted deployment.
 
-The user's xAI key and conversation metadata stay in that browser's `localStorage`. The key is sent as a bearer credential only to Brainworm's same-origin API routes, which forward it to xAI for that request without persisting it. Chat requests use `store: false`; generated images use IndexedDB, and synthesized voice clips use the browser Cache API.
+The user's xAI key, conversation metadata, and MCP definitions stay in that browser's `localStorage`. Credentials are sent only to Brainworm's same-origin chat route, which forwards them to xAI for that request without persisting them. Chat requests use `store: false`; generated images use IndexedDB, and synthesized voice clips use the browser Cache API.
 
 ## MCP workspace
 
-Brainworm connects xAI's Responses API to a remote HTTPS MCP server. Build receives only `BRAINWORM_MCP_ALLOWED_TOOLS`. Plan and Verify receive only `BRAINWORM_MCP_READONLY_TOOLS`. Because xAI's current remote-MCP contract does not expose per-call approval in Responses, explicit allowlists and the in-app **Arm MCP tools** switch are the permission boundary.
+Add up to eight remote HTTPS MCP servers under Settings → Workspaces. Each server has two exact tool allowlists:
+
+- **Read-only tools** are exposed in Normal and Plan modes.
+- **Always-approve tools** are exposed only after the user selects Always-approve or approves a plan for implementation.
+
+An empty allowlist exposes no tools. Server labels are normalized and deduplicated, insecure URLs are rejected, and authorization headers remain browser-local between requests.
 
 ## Verification
 
@@ -69,7 +74,7 @@ image on every pull request and push to `main`.
 
 - Darkwords — product structure and responsive interaction reference
 - Wordmark — xAI TTS and Grok Imagine behavior reference
-- [xAI Grok Build](https://github.com/xai-org/grok-build) — Plan/Build/Verify workflow inspiration (Apache-2.0)
+- [xAI Grok Build](https://github.com/xai-org/grok-build) — agent modes, plan approval, tool visibility, sessions, and permission workflow reference (Apache-2.0)
 - [xAI Responses API](https://docs.x.ai/developers/model-capabilities/text/generate-text)
 - [xAI Text to Speech](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech)
 - [xAI Image Generation](https://docs.x.ai/developers/model-capabilities/images/generation)

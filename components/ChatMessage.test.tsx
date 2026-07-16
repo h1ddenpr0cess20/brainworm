@@ -32,4 +32,24 @@ describe("ChatMessage code blocks", () => {
 
     expect(markup).not.toContain('aria-label="Copy code"');
   });
+
+  it("renders tool activity and plan approval controls", () => {
+    const message: Message = {
+      ...assistantMessage("## Plan\n\nMake the change."),
+      codeMode: "plan",
+      planState: "proposed",
+      tools: [{ id: "tool-1", name: "search_files", server: "repo", status: "complete" }],
+    };
+    const markup = renderToStaticMarkup(
+      <ChatMessage
+        message={message}
+        onApprovePlan={() => undefined}
+        onRequestPlanChanges={() => undefined}
+      />,
+    );
+
+    expect(markup).toContain("repo · search_files");
+    expect(markup).toContain("Approve and implement");
+    expect(markup).toContain("Request changes");
+  });
 });

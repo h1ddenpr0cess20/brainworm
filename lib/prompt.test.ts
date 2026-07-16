@@ -15,19 +15,24 @@ describe("Brainworm prompt helpers", () => {
 
   it("keeps plan mode read-only and explicit about browser limitations", () => {
     expect(BRAINWORM_CODING_PROMPT).toContain("cannot access or edit the user's real repository");
-    expect(codingModeInstruction("plan")).toContain("do not write implementation code");
-    expect(mcpModeInstruction(true, true)).toContain("read-only");
+    expect(codingModeInstruction("plan")).toContain("make no workspace changes");
+    expect(mcpModeInstruction(1, true)).toContain("read-only");
   });
 
   it("returns distinct instructions for every coding mode", () => {
-    expect(codingModeInstruction("build")).toContain("implementation-ready");
-    expect(codingModeInstruction("verify")).toContain("findings first");
+    expect(codingModeInstruction("normal")).toContain("NORMAL");
+    expect(codingModeInstruction("always")).toContain("authorized");
   });
 
   it("describes unavailable, read-only, and armed MCP states", () => {
-    expect(mcpModeInstruction(false, false)).toContain("No workspace MCP");
-    expect(mcpModeInstruction(true, true)).toContain("read-only");
-    expect(mcpModeInstruction(true, false)).toContain("armed");
+    expect(mcpModeInstruction(0, false)).toContain("No workspace MCP");
+    expect(mcpModeInstruction(1, true)).toContain("read-only");
+    expect(mcpModeInstruction(2, false)).toContain("2 workspace MCP servers");
+  });
+
+  it("keeps product provenance and UI commands out of runtime instructions", () => {
+    expect(BRAINWORM_CODING_PROMPT).not.toContain("Grok Build");
+    expect(BRAINWORM_CODING_PROMPT).not.toContain("Slash command");
   });
 
   it("creates a compact title from the opening message", () => {

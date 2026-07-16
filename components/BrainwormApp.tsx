@@ -109,7 +109,7 @@ const WORDMARK_XAI_VOICES: TtsVoice[] = [
 ].map((voiceId) => ({ voiceId, name: voiceId[0].toUpperCase() + voiceId.slice(1) }));
 
 const STARTERS = [
-  "Explain quantum entanglement to a curious 12-year-old",
+  "Explain quantum entanglement using a clear everyday analogy",
   "Plan a two-week portfolio launch with 90 minutes per weekday",
   "Recommend five surreal novels under 300 pages",
   "Compare SQLite and PostgreSQL for a small SaaS app",

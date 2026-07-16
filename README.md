@@ -51,6 +51,8 @@ cp .env.example .env.local
 docker compose up --build
 ```
 
+**On your phone:** visit the deployed site (e.g. the Vercel deployment) in Chrome and choose **⋮ → Add to Home screen** to install Brainworm as a mobile web app. On iPhone, use **Share → Add to Home Screen** in Safari or Chrome.
+
 ## Privacy
 
 Everything personal stays in the browser. Your xAI key, threads, settings, and MCP definitions live in `localStorage`; generated images live in IndexedDB; voice clips live in the Cache API. Credentials are sent only to Brainworm's same-origin API routes, which forward them to xAI for that request without persisting them, and chat requests use `store: false`.
@@ -84,3 +86,7 @@ npm run check   # format:check + lint + typecheck + test:coverage
 - Wordmark — xAI TTS and Grok Imagine behavior reference
 - [xAI Grok Build](https://github.com/xai-org/grok-build) — agent modes, plan approval, tool visibility, sessions, and permission workflow reference (Apache-2.0)
 - [xAI Responses API](https://docs.x.ai/developers/model-capabilities/text/generate-text) · [Text to Speech](https://docs.x.ai/developers/model-capabilities/audio/text-to-speech) · [Image Generation](https://docs.x.ai/developers/model-capabilities/images/generation) · [Remote MCP](https://docs.x.ai/developers/tools/remote-mcp)
+
+---
+
+<p align="center"><sub>Created with GPT-5.6 Sol · extra high · fast</sub></p>

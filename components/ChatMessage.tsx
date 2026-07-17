@@ -170,20 +170,25 @@ export function ChatMessage({
           <div className="message__tools" aria-label="Tool activity">
             <span>Tools</span>
             <div>
-              {message.tools.map((tool) => (
-                <span
-                  className={`is-${tool.status}`}
-                  key={tool.id}
-                  title={describeToolActivity(
-                    tool,
-                    findResponseItem(message.responseItems, tool.id),
-                  )}
-                >
-                  <i />
-                  {tool.server ? `${tool.server} · ` : ""}
-                  {tool.name}
-                </span>
-              ))}
+              {message.tools.map((tool) => {
+                const item = findResponseItem(message.responseItems, tool.id);
+                return (
+                  <span
+                    className={`is-${tool.status}`}
+                    key={tool.id}
+                    tabIndex={item ? 0 : undefined}
+                  >
+                    <i />
+                    {tool.server ? `${tool.server} · ` : ""}
+                    {tool.name}
+                    {item && (
+                      <span className="message__tool-tip" role="tooltip">
+                        {describeToolActivity(tool, item)}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}

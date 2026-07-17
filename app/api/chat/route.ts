@@ -122,9 +122,14 @@ export async function POST(request: Request): Promise<Response> {
     async start(controller) {
       let buffer = "";
       let closed = false;
+      let pendingParagraphBreak = false;
 
       const emit = (event: StreamEvent) => {
         if (!closed) controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
+      };
+      const emitDelta = (delta: string) => {
+        emit({ type: "delta", delta: pendingParagraphBreak ? `\n\n${delta}` : delta });
+        pendingParagraphBreak = false;
       };
       const finish = () => {
         if (!closed) {
@@ -144,8 +149,11 @@ export async function POST(request: Request): Promise<Response> {
           for (const sseEvent of split.events) {
             const parsed = parseXaiEvent(sseEvent);
             if (!parsed) continue;
-            if (parsed.kind === "delta") emit({ type: "delta", delta: parsed.delta });
-            if (parsed.kind === "tool") emit({ type: "tool", tool: parsed.tool });
+            if (parsed.kind === "delta") emitDelta(parsed.delta);
+            if (parsed.kind === "tool") {
+              pendingParagraphBreak = true;
+              emit({ type: "tool", tool: parsed.tool });
+            }
             if (parsed.kind === "error") {
               emit({ type: "error", message: parsed.message });
               finish();
@@ -169,8 +177,11 @@ export async function POST(request: Request): Promise<Response> {
           const split = splitSseBuffer(`${buffer}\n\n`);
           for (const sseEvent of split.events) {
             const parsed = parseXaiEvent(sseEvent);
-            if (parsed?.kind === "delta") emit({ type: "delta", delta: parsed.delta });
-            if (parsed?.kind === "tool") emit({ type: "tool", tool: parsed.tool });
+            if (parsed?.kind === "delta") emitDelta(parsed.delta);
+            if (parsed?.kind === "tool") {
+              pendingParagraphBreak = true;
+              emit({ type: "tool", tool: parsed.tool });
+            }
             if (parsed?.kind === "complete") {
               emit({
                 type: "done",

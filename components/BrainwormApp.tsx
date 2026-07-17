@@ -16,7 +16,7 @@ import type {
 import { makeConversationTitle } from "@/lib/prompt";
 import { parseCodeCommand } from "@/lib/codeCommands";
 import { readStreamEvents } from "@/lib/chatStream";
-import { needsTtsCodeModeConfirmation } from "@/lib/tts";
+import { isTtsActive } from "@/lib/tts";
 import {
   appendMessageVariant,
   branchFromMessage,
@@ -373,15 +373,9 @@ export function BrainwormApp() {
     saveXaiApiKey(apiKey);
   };
 
-  const confirmTtsInCodeMode = (nextSettings: BrainwormSettings) =>
-    !needsTtsCodeModeConfirmation(state.settings, nextSettings) ||
-    window.confirm(
-      "Text to speech can read source code, terminal output, and secrets aloud in Code mode. Are you sure you want to continue?",
-    );
-
   const setAppMode = (appMode: BrainwormSettings["appMode"]) => {
-    if (!confirmTtsInCodeMode({ ...state.settings, appMode })) return;
     updateSettings({ appMode });
+    if (appMode === "code") stopTtsMessage();
     if (appMode !== "code") setPendingFiles([]);
     if (appMode !== "imagine") setPendingImage(null);
     setPanel(null);
@@ -395,7 +389,6 @@ export function BrainwormApp() {
   };
 
   const setTtsEnabled = (ttsEnabled: boolean) => {
-    if (!confirmTtsInCodeMode({ ...state.settings, ttsEnabled })) return;
     updateSettings({ ttsEnabled });
     if (!ttsEnabled) stopTtsMessage();
   };
@@ -679,7 +672,7 @@ export function BrainwormApp() {
         return;
       }
       finishVariant(accumulated, finalSources);
-      if (accumulated && state.settings.ttsEnabled && state.settings.ttsAutoplay) {
+      if (accumulated && isTtsActive(state.settings) && state.settings.ttsAutoplay) {
         void autoplayTtsMessage({
           messageId,
           text: accumulated,
@@ -1043,7 +1036,7 @@ export function BrainwormApp() {
           content: accumulated || "The response stream ended before the agent completed its turn.",
         });
       }
-      if (accumulated && state.settings.ttsEnabled && state.settings.ttsAutoplay) {
+      if (accumulated && isTtsActive(state.settings) && state.settings.ttsAutoplay) {
         void autoplayTtsMessage({
           messageId: assistantMessage.id,
           text: accumulated,
@@ -1222,7 +1215,7 @@ export function BrainwormApp() {
                 Surface scout on
               </span>
             )}
-            {state.settings.ttsEnabled && (
+            {isTtsActive(state.settings) && (
               <span>
                 <VolumeIcon />
                 {state.settings.ttsVoice}
@@ -1265,7 +1258,7 @@ export function BrainwormApp() {
                   onApprovePlan={approvePlan}
                   onRequestPlanChanges={requestPlanChanges}
                   tts={{
-                    enabled: state.settings.ttsEnabled,
+                    enabled: isTtsActive(state.settings),
                     voice: state.settings.ttsVoice,
                     speed: state.settings.ttsSpeed,
                     apiKey: xaiApiKey.trim(),
@@ -1489,7 +1482,7 @@ export function BrainwormApp() {
                     ? "Dig"
                     : "Deep tunnel"}
                 {state.settings.webSearch ? " · web search" : " · local context"}
-                {state.settings.ttsEnabled ? ` · ${state.settings.ttsVoice} voice` : ""}
+                {isTtsActive(state.settings) ? ` · ${state.settings.ttsVoice} voice` : ""}
                 {state.settings.appMode === "code" && enabledMcpServers.length > 0
                   ? ` · ${enabledMcpServers.length} MCP`
                   : ""}
@@ -1752,7 +1745,7 @@ export function BrainwormApp() {
                   {settingsTab === "voice" && (
                     <SettingSection
                       title="Reading voice"
-                      description="Wordmark-style xAI playback with local audio caching, autoplay, and per-message controls."
+                      description="Wordmark-style xAI playback with local audio caching, autoplay, and per-message controls. Voice stays silent in Code mode so source code, terminal output, and secrets are never read aloud."
                     >
                       <Toggle
                         checked={state.settings.ttsEnabled}

@@ -1,35 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { isTtsSpeed, needsTtsCodeModeConfirmation, toSpeechText } from "./tts";
+import { isTtsSpeed, isTtsActive, toSpeechText } from "./tts";
 
-describe("needsTtsCodeModeConfirmation", () => {
-  it("guards both entering Code mode with TTS on and enabling TTS within Code mode", () => {
-    expect(
-      needsTtsCodeModeConfirmation(
-        { appMode: "chat", ttsEnabled: true },
-        { appMode: "code", ttsEnabled: true },
-      ),
-    ).toBe(true);
-    expect(
-      needsTtsCodeModeConfirmation(
-        { appMode: "code", ttsEnabled: false },
-        { appMode: "code", ttsEnabled: true },
-      ),
-    ).toBe(true);
+describe("isTtsActive", () => {
+  it("allows voice in Chat and Imagine when TTS is enabled", () => {
+    expect(isTtsActive({ appMode: "chat", ttsEnabled: true })).toBe(true);
+    expect(isTtsActive({ appMode: "imagine", ttsEnabled: true })).toBe(true);
   });
 
-  it("does not warn for changes that do not newly combine TTS with Code mode", () => {
-    expect(
-      needsTtsCodeModeConfirmation(
-        { appMode: "chat", ttsEnabled: false },
-        { appMode: "code", ttsEnabled: false },
-      ),
-    ).toBe(false);
-    expect(
-      needsTtsCodeModeConfirmation(
-        { appMode: "code", ttsEnabled: true },
-        { appMode: "code", ttsEnabled: true },
-      ),
-    ).toBe(false);
+  it("never allows voice in Code mode, even with TTS enabled", () => {
+    expect(isTtsActive({ appMode: "code", ttsEnabled: true })).toBe(false);
+    expect(isTtsActive({ appMode: "code", ttsEnabled: false })).toBe(false);
+  });
+
+  it("stays off when TTS is disabled", () => {
+    expect(isTtsActive({ appMode: "chat", ttsEnabled: false })).toBe(false);
   });
 });
 

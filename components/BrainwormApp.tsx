@@ -1184,7 +1184,7 @@ export function BrainwormApp() {
           {state.settings.theme === "paper" ? <MoonIcon /> : <SunIcon />}
         </RailButton>
         <RailButton
-          label="Settings"
+          label="Setup"
           active={panel === "settings"}
           onClick={() => setPanel((current) => (current === "settings" ? null : "settings"))}
         >
@@ -1472,7 +1472,7 @@ export function BrainwormApp() {
                     ? pendingImage
                       ? "Describe how Grok Imagine should edit this image…"
                       : "Describe an image to unearth…"
-                    : "Ask me anything…"
+                    : "Leave a thought in the margins…"
               }
               aria-label="Message Brainworm"
             />
@@ -1597,7 +1597,7 @@ export function BrainwormApp() {
             <div className="drawer__header">
               <div>
                 <p>{panel === "history" ? "Your shelf" : "Fine-tune the worm"}</p>
-                <h2>{panel === "history" ? "Library" : "Settings"}</h2>
+                <h2>{panel === "history" ? "Library" : "Setup"}</h2>
               </div>
               <button onClick={() => setPanel(null)} aria-label="Close panel">
                 <CloseIcon />

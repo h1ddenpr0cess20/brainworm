@@ -18,6 +18,17 @@ const APP_ROOT = app.isPackaged
   : path.join(__dirname, "..");
 const SERVER_PATH = path.join(APP_ROOT, ".next", "standalone", "server.js");
 
+const PREFERRED_PORT = 47973;
+
+function isPortFree(port) {
+  return new Promise((resolve) => {
+    const srv = net.createServer();
+    srv.unref();
+    srv.once("error", () => resolve(false));
+    srv.listen(port, "127.0.0.1", () => srv.close(() => resolve(true)));
+  });
+}
+
 function getFreePort() {
   return new Promise((resolve, reject) => {
     const srv = net.createServer();
@@ -28,6 +39,11 @@ function getFreePort() {
       srv.close(() => resolve(port));
     });
   });
+}
+
+async function getPort() {
+  if (await isPortFree(PREFERRED_PORT)) return PREFERRED_PORT;
+  return getFreePort();
 }
 
 async function waitForServer(url, timeoutMs) {
@@ -51,7 +67,7 @@ async function startServer() {
     throw new Error(`Standalone server not found at ${SERVER_PATH}. Run "npm run build" first.`);
   }
 
-  const port = await getFreePort();
+  const port = await getPort();
   serverProcess = fork(SERVER_PATH, [], {
     cwd: path.dirname(SERVER_PATH),
     env: {

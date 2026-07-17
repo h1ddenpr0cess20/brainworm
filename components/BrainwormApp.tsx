@@ -1139,7 +1139,10 @@ export function BrainwormApp() {
       className={`brainworm-app ${hydrated ? "is-ready" : ""} ${state.settings.appMode === "code" ? "is-code-mode" : state.settings.appMode === "imagine" ? "is-imagine-mode" : ""}`}
       style={
         isDesktopApp()
-          ? ({ paddingTop: TITLEBAR_HEIGHT, "--titlebar-height": `${TITLEBAR_HEIGHT}px` } as CSSProperties)
+          ? ({
+              paddingTop: TITLEBAR_HEIGHT,
+              "--titlebar-height": `${TITLEBAR_HEIGHT}px`,
+            } as CSSProperties)
           : undefined
       }
     >
@@ -1173,7 +1176,9 @@ export function BrainwormApp() {
         <div className="rail__spacer" />
         <RailButton
           label={state.settings.theme === "paper" ? "Switch to night soil" : "Switch to parchment"}
-          onClick={() => updateSettings({ theme: state.settings.theme === "paper" ? "night" : "paper" })}
+          onClick={() =>
+            updateSettings({ theme: state.settings.theme === "paper" ? "night" : "paper" })
+          }
         >
           {state.settings.theme === "paper" ? <MoonIcon /> : <SunIcon />}
         </RailButton>
@@ -1187,7 +1192,8 @@ export function BrainwormApp() {
         <div
           className="rail__model-wrap"
           onBlur={(event) => {
-            if (!event.currentTarget.contains(event.relatedTarget as Node)) setEffortMenuOpen(false);
+            if (!event.currentTarget.contains(event.relatedTarget as Node))
+              setEffortMenuOpen(false);
           }}
         >
           <button

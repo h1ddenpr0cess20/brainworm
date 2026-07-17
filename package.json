@@ -69,16 +69,23 @@
     ],
     "mac": {
       "category": "public.app-category.productivity",
-      "target": ["dmg", "zip"],
+      "target": [
+        "dmg",
+        "zip"
+      ],
       "icon": "electron/icon.png"
     },
     "linux": {
       "category": "Utility",
-      "target": ["AppImage"],
+      "target": [
+        "AppImage"
+      ],
       "icon": "electron/icon.png"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "electron/icon.png"
     }
   }

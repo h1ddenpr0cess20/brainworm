@@ -13,7 +13,9 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 // (next.config.ts sets output: "standalone" outside Vercel) as a child
 // process on a loopback port and point the window at it, the same way
 // Dockerfile runs `node server.js` in production.
-const APP_ROOT = app.isPackaged ? path.join(process.resourcesPath, "app") : path.join(__dirname, "..");
+const APP_ROOT = app.isPackaged
+  ? path.join(process.resourcesPath, "app")
+  : path.join(__dirname, "..");
 const SERVER_PATH = path.join(APP_ROOT, ".next", "standalone", "server.js");
 
 function getFreePort() {
@@ -116,9 +118,11 @@ async function createWindow(origin) {
   });
 
   const ALLOWED_PERMISSIONS = new Set(["clipboard-read", "clipboard-sanitized-write"]);
-  mainWindow.webContents.session.setPermissionRequestHandler((_webContents, permission, callback) => {
-    callback(ALLOWED_PERMISSIONS.has(permission));
-  });
+  mainWindow.webContents.session.setPermissionRequestHandler(
+    (_webContents, permission, callback) => {
+      callback(ALLOWED_PERMISSIONS.has(permission));
+    },
+  );
   mainWindow.webContents.session.setPermissionCheckHandler((_webContents, permission) =>
     ALLOWED_PERMISSIONS.has(permission),
   );

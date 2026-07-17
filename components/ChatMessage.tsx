@@ -13,6 +13,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/types";
 import { copyText } from "@/lib/desktop";
+import { describeToolActivity, findResponseItem } from "@/lib/toolDetails";
 import { BrainLogo } from "./BrainLogo";
 import { BranchIcon, CopyIcon, RegenerateIcon } from "./Icons";
 import { TtsControls } from "./TtsControls";
@@ -170,7 +171,14 @@ export function ChatMessage({
             <span>Tools</span>
             <div>
               {message.tools.map((tool) => (
-                <span className={`is-${tool.status}`} key={tool.id}>
+                <span
+                  className={`is-${tool.status}`}
+                  key={tool.id}
+                  title={describeToolActivity(
+                    tool,
+                    findResponseItem(message.responseItems, tool.id),
+                  )}
+                >
                   <i />
                   {tool.server ? `${tool.server} · ` : ""}
                   {tool.name}

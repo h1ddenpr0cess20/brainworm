@@ -52,4 +52,24 @@ describe("ChatMessage code blocks", () => {
     expect(markup).toContain("Approve and implement");
     expect(markup).toContain("Request changes");
   });
+
+  it("surfaces tool arguments and output as a hover title from the raw response item", () => {
+    const message: Message = {
+      ...assistantMessage("Read the config."),
+      tools: [{ id: "tool-1", name: "read_file", server: "repo", status: "complete" }],
+      responseItems: [
+        {
+          type: "mcp_call",
+          id: "tool-1",
+          name: "read_file",
+          arguments: '{"path":"config.ts"}',
+          output: "export const timeout = 300;",
+        },
+      ],
+    };
+    const markup = renderToStaticMarkup(<ChatMessage message={message} />);
+
+    expect(markup).toContain("Arguments: {&quot;path&quot;:&quot;config.ts&quot;}");
+    expect(markup).toContain("Output: export const timeout = 300;");
+  });
 });

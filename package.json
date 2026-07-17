@@ -3,6 +3,7 @@
   "version": "1.1.0",
   "private": true,
   "description": "A bookish, earth-toned xAI chat companion built with Next.js.",
+  "author": "Dustin Whyte",
   "engines": {
     "node": ">=22"
   },
@@ -23,10 +24,10 @@
     "electron:prepare": "node electron/prepare.cjs",
     "electron": "npm run build && npm run electron:prepare && electron electron/main.cjs",
     "electron:pack": "npm run build && npm run electron:prepare && electron-builder --dir",
-    "electron:dist": "npm run build && npm run electron:prepare && electron-builder",
-    "electron:dist:linux": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64",
-    "electron:dist:win": "npm run build && npm run electron:prepare && electron-builder --win nsis --x64",
-    "electron:dist:release": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64 && electron-builder --win nsis --x64"
+    "electron:dist": "npm run build && npm run electron:prepare && electron-builder --publish never",
+    "electron:dist:linux": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64 --publish never",
+    "electron:dist:win": "npm run build && npm run electron:prepare && electron-builder --win nsis --x64 --publish never",
+    "electron:dist:release": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64 --publish never && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
     "next": "^16.2.10",

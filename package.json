@@ -19,7 +19,14 @@
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "audit": "npm audit --omit=dev --audit-level=high",
-    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage"
+    "check": "npm run format:check && npm run lint && npm run typecheck && npm run test:coverage",
+    "electron:prepare": "node electron/prepare.cjs",
+    "electron": "npm run build && npm run electron:prepare && electron electron/main.cjs",
+    "electron:pack": "npm run build && npm run electron:prepare && electron-builder --dir",
+    "electron:dist": "npm run build && npm run electron:prepare && electron-builder",
+    "electron:dist:linux": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64",
+    "electron:dist:win": "npm run build && npm run electron:prepare && electron-builder --win nsis --x64",
+    "electron:dist:release": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64 && electron-builder --win nsis --x64"
   },
   "dependencies": {
     "next": "^16.2.10",
@@ -34,11 +41,45 @@
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "@vitest/coverage-v8": "4.1.10",
+    "electron": "^43.1.1",
+    "electron-builder": "^26.15.3",
     "eslint": "9.39.5",
     "eslint-config-next": "16.2.10",
     "eslint-config-prettier": "10.1.8",
     "prettier": "3.9.5",
     "typescript": "^5.9.3",
     "vitest": "^4.1.10"
+  },
+  "build": {
+    "appId": "com.h1ddenpr0cess20.brainworm",
+    "productName": "Brainworm",
+    "asar": false,
+    "extraMetadata": {
+      "main": "electron/main.cjs"
+    },
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "electron/main.cjs",
+      "electron/preload.cjs",
+      "electron/icon.png",
+      ".next/standalone/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg", "zip"],
+      "icon": "electron/icon.png"
+    },
+    "linux": {
+      "category": "Utility",
+      "target": ["AppImage"],
+      "icon": "electron/icon.png"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "electron/icon.png"
+    }
   }
 }

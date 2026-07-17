@@ -146,3 +146,16 @@ export const ImageIcon = (props: IconProps) => (
     <path d="M21 15l-5-5L5 20" />
   </Icon>
 );
+export const EyeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M1.5 12S5 5 12 5s10.5 7 10.5 7-3.5 7-10.5 7S1.5 12 1.5 12z" />
+    <circle cx="12" cy="12" r="3" />
+  </Icon>
+);
+export const EyeOffIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 3l18 18" />
+    <path d="M10.6 5.1A10.7 10.7 0 0112 5c7 0 10.5 7 10.5 7a15.6 15.6 0 01-3.4 4.3M6.6 6.6C3.4 8.6 1.5 12 1.5 12s3.5 7 10.5 7a10.3 10.3 0 004.1-.8" />
+    <path d="M9.9 9.9a3 3 0 004.2 4.2" />
+  </Icon>
+);

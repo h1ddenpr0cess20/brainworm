@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import type {
   BrainwormSettings,
   Conversation,
@@ -9,6 +9,7 @@ import type {
   MessageVariant,
   McpServerConfig,
   PersistedState,
+  ReasoningEffort,
   Source,
   ToolActivity,
   TtsVoice,
@@ -33,13 +34,17 @@ import {
 } from "@/lib/imageStorage";
 import { autoplayTtsMessage, clearTtsCache, playTtsMessage, stopTtsMessage } from "@/lib/ttsClient";
 import { collectGalleryItems } from "@/lib/gallery";
+import { isDesktopApp, TITLEBAR_HEIGHT } from "@/lib/desktop";
 import { BrainLogo } from "./BrainLogo";
 import { ChatMessage } from "./ChatMessage";
+import { DesktopTitlebar } from "./DesktopTitlebar";
 import { GalleryPanel } from "./GalleryPanel";
 import {
   CloseIcon,
   CodeIcon,
   CheckIcon,
+  EyeIcon,
+  EyeOffIcon,
   LibraryIcon,
   ImageIcon,
   MoonIcon,
@@ -243,6 +248,8 @@ export function BrainwormApp() {
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const [ttsVoices, setTtsVoices] = useState<TtsVoice[]>(WORDMARK_XAI_VOICES);
   const [xaiApiKey, setXaiApiKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
+  const [effortMenuOpen, setEffortMenuOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -1130,7 +1137,16 @@ export function BrainwormApp() {
   return (
     <div
       className={`brainworm-app ${hydrated ? "is-ready" : ""} ${state.settings.appMode === "code" ? "is-code-mode" : state.settings.appMode === "imagine" ? "is-imagine-mode" : ""}`}
+      style={
+        isDesktopApp()
+          ? ({
+              paddingTop: TITLEBAR_HEIGHT,
+              "--titlebar-height": `${TITLEBAR_HEIGHT}px`,
+            } as CSSProperties)
+          : undefined
+      }
     >
+      <DesktopTitlebar theme={state.settings.theme} />
       <aside className="rail" aria-label="Main navigation">
         <BrainLogo className="rail__logo" />
         <RailButton label="New thread" onClick={newConversation}>
@@ -1159,13 +1175,57 @@ export function BrainwormApp() {
         </RailButton>
         <div className="rail__spacer" />
         <RailButton
+          label={state.settings.theme === "paper" ? "Switch to night soil" : "Switch to parchment"}
+          onClick={() =>
+            updateSettings({ theme: state.settings.theme === "paper" ? "night" : "paper" })
+          }
+        >
+          {state.settings.theme === "paper" ? <MoonIcon /> : <SunIcon />}
+        </RailButton>
+        <RailButton
           label="Burrow setup"
           active={panel === "settings"}
           onClick={() => setPanel((current) => (current === "settings" ? null : "settings"))}
         >
           <SettingsIcon />
         </RailButton>
-        <div className="rail__model">G4.5</div>
+        <div
+          className="rail__model-wrap"
+          onBlur={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node))
+              setEffortMenuOpen(false);
+          }}
+        >
+          <button
+            type="button"
+            className="rail__model"
+            aria-label={`Reasoning effort: ${effortLabel(state.settings.reasoningEffort)}`}
+            aria-haspopup="menu"
+            aria-expanded={effortMenuOpen}
+            onClick={() => setEffortMenuOpen((current) => !current)}
+          >
+            {effortAbbr(state.settings.reasoningEffort)}
+            {!effortMenuOpen && <span>Effort: {effortLabel(state.settings.reasoningEffort)}</span>}
+          </button>
+          {effortMenuOpen && (
+            <div className="rail__model-menu" role="menu">
+              {EFFORT_ORDER.map((effort) => (
+                <button
+                  key={effort}
+                  type="button"
+                  role="menuitem"
+                  className={state.settings.reasoningEffort === effort ? "is-on" : ""}
+                  onClick={() => {
+                    updateSettings({ reasoningEffort: effort });
+                    setEffortMenuOpen(false);
+                  }}
+                >
+                  {effortLabel(effort)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </aside>
 
       <main className="main-shell">
@@ -1690,7 +1750,7 @@ export function BrainwormApp() {
                           <span>xAI API key</span>
                           <div>
                             <input
-                              type="text"
+                              type={showApiKey ? "text" : "password"}
                               value={xaiApiKey}
                               onChange={(event) => updateXaiApiKey(event.target.value)}
                               placeholder="xai-…"
@@ -1700,6 +1760,15 @@ export function BrainwormApp() {
                               spellCheck={false}
                               aria-label="xAI API key"
                             />
+                            <button
+                              type="button"
+                              className="api-key-field__toggle"
+                              onClick={() => setShowApiKey((current) => !current)}
+                              aria-label={showApiKey ? "Hide API key" : "Show API key"}
+                              aria-pressed={showApiKey}
+                            >
+                              {showApiKey ? <EyeOffIcon /> : <EyeIcon />}
+                            </button>
                             {hasXaiApiKey && (
                               <button type="button" onClick={() => updateXaiApiKey("")}>
                                 Clear
@@ -2062,6 +2131,16 @@ export function BrainwormApp() {
       </nav>
     </div>
   );
+}
+
+const EFFORT_ORDER: ReasoningEffort[] = ["low", "medium", "high"];
+
+function effortLabel(effort: ReasoningEffort): string {
+  return effort === "low" ? "Nibble" : effort === "medium" ? "Dig" : "Deep tunnel";
+}
+
+function effortAbbr(effort: ReasoningEffort): string {
+  return effort === "low" ? "Nib" : effort === "medium" ? "Dig" : "Tun";
 }
 
 function RailButton({

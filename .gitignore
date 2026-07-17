@@ -7,3 +7,4 @@ out/
 coverage/
 *.tsbuildinfo
 .DS_Store
+release/

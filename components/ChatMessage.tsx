@@ -12,6 +12,7 @@ import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/types";
+import { copyText } from "@/lib/desktop";
 import { BrainLogo } from "./BrainLogo";
 import { BranchIcon, CopyIcon, RegenerateIcon } from "./Icons";
 import { TtsControls } from "./TtsControls";
@@ -53,7 +54,7 @@ function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
   const language = codeLanguage(children);
 
   const copy = async () => {
-    await navigator.clipboard.writeText(codeRef.current?.textContent ?? "");
+    await copyText(codeRef.current?.textContent ?? "");
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   };
@@ -90,7 +91,7 @@ export function ChatMessage({
   const currentVersion = (message.variantIndex ?? 0) + 1;
 
   const copy = async () => {
-    await navigator.clipboard.writeText(message.content);
+    await copyText(message.content);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
   };

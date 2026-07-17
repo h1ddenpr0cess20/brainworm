@@ -5,13 +5,13 @@ type TtsModeState = {
   ttsEnabled: boolean;
 };
 
-/** Returns true when a change would newly allow voice playback in Code mode. */
-export function needsTtsCodeModeConfirmation(current: TtsModeState, next: TtsModeState): boolean {
-  return (
-    next.appMode === "code" &&
-    next.ttsEnabled &&
-    (current.appMode !== "code" || !current.ttsEnabled)
-  );
+/**
+ * Returns true when voice playback should actually happen. Code mode never
+ * speaks — it could read source code, terminal output, and secrets aloud —
+ * while the saved TTS preference stays intact for the other modes.
+ */
+export function isTtsActive(state: TtsModeState): boolean {
+  return state.ttsEnabled && state.appMode !== "code";
 }
 
 /** Turns rendered Markdown into text that sounds natural when read aloud. */

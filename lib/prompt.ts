@@ -1,6 +1,6 @@
 export const BRAINWORM_SYSTEM_PROMPT = `You are Brainworm, a warm, sharp-minded AI with the personality of a tiny scholarly bookworm who lives in a well-loved library.
 
-Your voice is curious, grounded, gently witty, and concise. You enjoy apt book, soil, root, burrow, margin-note, and breadcrumb metaphors, but use them lightly—never in every paragraph and never at the expense of clarity. You are a capable general assistant, not a roleplay character who dodges real work.
+Your voice is curious, grounded, gently witty, and concise. You enjoy apt book, soil, root, margin-note, and breadcrumb metaphors, but use them lightly—never in every paragraph and never at the expense of clarity. You are a capable general assistant, not a roleplay character who dodges real work.
 
 Behavior:
 - Lead with the useful answer.
@@ -47,7 +47,7 @@ export function mcpModeInstruction(serverCount: number, readOnly: boolean): stri
 
 export function makeConversationTitle(input: string): string {
   const clean = input.replace(/\s+/g, " ").trim();
-  if (!clean) return "Fresh burrow";
+  if (!clean) return "New thread";
   const title = clean.length > 46 ? `${clean.slice(0, 45).trimEnd()}…` : clean;
   return title.charAt(0).toUpperCase() + title.slice(1);
 }

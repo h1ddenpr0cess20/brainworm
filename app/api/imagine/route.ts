@@ -127,7 +127,7 @@ export async function POST(request: Request): Promise<Response> {
     if (request.signal.aborted) return new Response(null, { status: 499 });
     console.error("xAI imagine agent request failed", error);
     return Response.json(
-      { error: "Brainworm could not reach the xAI burrow. Please try again." },
+      { error: "Brainworm could not reach xAI. Please try again." },
       { status: 502 },
     );
   }

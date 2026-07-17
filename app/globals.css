@@ -428,27 +428,6 @@ a:focus-visible {
   box-shadow: 0 1px 4px var(--shadow);
 }
 
-.topbar__status {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--muted);
-  font-size: 10.5px;
-  font-weight: 650;
-}
-
-.topbar__status > span:not(.connection-dot) {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  white-space: nowrap;
-}
-
-.topbar__status svg {
-  width: 14px;
-  height: 14px;
-}
-
 .topbar__mobile-logo {
   display: none;
 }
@@ -2808,9 +2787,6 @@ a:focus-visible {
 }
 
 @media (max-width: 980px) {
-  .topbar__status > span:first-child {
-    display: none;
-  }
   .topbar__thread h1 {
     max-width: 280px;
   }
@@ -2850,8 +2826,7 @@ a:focus-visible {
   .topbar__thread > span {
     display: none;
   }
-  .topbar__mode-switch,
-  .topbar__status {
+  .topbar__mode-switch {
     display: none;
   }
 

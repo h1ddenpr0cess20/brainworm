@@ -47,6 +47,6 @@ describe("Brainworm prompt helpers", () => {
       "How do tree roots share nutrients?",
     );
     expect(makeConversationTitle("x".repeat(80))).toHaveLength(46);
-    expect(makeConversationTitle("   ")).toBe("Fresh burrow");
+    expect(makeConversationTitle("   ")).toBe("New thread");
   });
 });

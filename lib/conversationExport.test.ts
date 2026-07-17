@@ -15,7 +15,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
   };
 }
 
-function makeConversation(messages: Message[], title = "Fresh burrow"): Conversation {
+function makeConversation(messages: Message[], title = "New thread"): Conversation {
   return { id: "thread-1", title, createdAt: 0, updatedAt: 0, messages };
 }
 
@@ -94,7 +94,7 @@ describe("buildExportContent", () => {
         "paper",
         ISO,
       )!;
-      expect(content).toContain("# Fresh burrow");
+      expect(content).toContain("# New thread");
       expect(content).toContain("### You");
       expect(content).toContain("Hi");
     });
@@ -172,7 +172,7 @@ describe("buildExportContent", () => {
       const content = buildExportContent(convo, "json", true, "paper", ISO)!;
       const parsed = JSON.parse(content);
 
-      expect(parsed.title).toBe("Fresh burrow");
+      expect(parsed.title).toBe("New thread");
       expect(parsed.exportedAt).toBe(ISO);
       expect(parsed.messages).toHaveLength(2);
       expect(parsed.messages[0]).toMatchObject({ role: "user", sender: "You", content: "Hi" });

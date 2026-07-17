@@ -104,7 +104,7 @@ export async function POST(request: Request): Promise<Response> {
     }
     console.error("xAI request failed", error);
     return Response.json(
-      { error: "Brainworm could not reach the xAI burrow. Please try again." },
+      { error: "Brainworm could not reach xAI. Please try again." },
       { status: 502 },
     );
   }

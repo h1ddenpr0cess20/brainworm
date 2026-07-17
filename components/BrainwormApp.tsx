@@ -188,7 +188,7 @@ function makeConversation(): Conversation {
   const now = Date.now();
   return {
     id: makeId("thread"),
-    title: "Fresh burrow",
+    title: "New thread",
     createdAt: now,
     updatedAt: now,
     messages: [],
@@ -1184,7 +1184,7 @@ export function BrainwormApp() {
           {state.settings.theme === "paper" ? <MoonIcon /> : <SunIcon />}
         </RailButton>
         <RailButton
-          label="Burrow setup"
+          label="Settings"
           active={panel === "settings"}
           onClick={() => setPanel((current) => (current === "settings" ? null : "settings"))}
         >
@@ -1233,8 +1233,8 @@ export function BrainwormApp() {
         <header className="topbar">
           <BrainLogo className="topbar__mobile-logo" withWordmark />
           <div className="topbar__thread">
-            <h1 title={activeConversation?.title ?? "Fresh burrow"}>
-              {activeConversation?.title ?? "Fresh burrow"}
+            <h1 title={activeConversation?.title ?? "New thread"}>
+              {activeConversation?.title ?? "New thread"}
             </h1>
             <span>
               {turns} {turns === 1 ? "turn" : "turns"}
@@ -1268,40 +1268,6 @@ export function BrainwormApp() {
               <ImageIcon />
               Imagine
             </button>
-          </div>
-          <div className="topbar__status">
-            {state.settings.webSearch && (
-              <span>
-                <SearchIcon />
-                Surface scout on
-              </span>
-            )}
-            {isTtsActive(state.settings) && (
-              <span>
-                <VolumeIcon />
-                {state.settings.ttsVoice}
-              </span>
-            )}
-            {state.settings.appMode === "code" && (
-              <span>
-                <CodeIcon />
-                {codeModeLabel(state.settings.codeSessionMode)} mode
-              </span>
-            )}
-            {state.settings.appMode === "imagine" && (
-              <span>
-                <ImageIcon />
-                Grok Imagine
-              </span>
-            )}
-            {state.settings.appMode === "code" && enabledMcpServers.length > 0 && (
-              <span>
-                <span className="connection-dot is-on" />
-                {enabledMcpServers.length} MCP
-              </span>
-            )}
-            <span className={`connection-dot ${hasXaiApiKey ? "is-on" : ""}`} />
-            <span>{hasXaiApiKey ? "xAI den ready" : "Key needed"}</span>
           </div>
           <ExportMenu conversation={activeConversation} theme={state.settings.theme} />
         </header>
@@ -1506,7 +1472,7 @@ export function BrainwormApp() {
                     ? pendingImage
                       ? "Describe how Grok Imagine should edit this image…"
                       : "Describe an image to unearth…"
-                    : "Leave a thought at the mouth of the burrow…"
+                    : "Ask me anything…"
               }
               aria-label="Message Brainworm"
             />
@@ -1631,7 +1597,7 @@ export function BrainwormApp() {
             <div className="drawer__header">
               <div>
                 <p>{panel === "history" ? "Your shelf" : "Fine-tune the worm"}</p>
-                <h2>{panel === "history" ? "Library" : "Burrow setup"}</h2>
+                <h2>{panel === "history" ? "Library" : "Settings"}</h2>
               </div>
               <button onClick={() => setPanel(null)} aria-label="Close panel">
                 <CloseIcon />
@@ -1677,7 +1643,7 @@ export function BrainwormApp() {
                 </label>
                 <button className="new-thread-button" onClick={newConversation}>
                   <PlusIcon />
-                  Start a fresh burrow
+                  New thread
                 </button>
                 <div className="history-list">
                   {visibleHistory.map((conversation) => (

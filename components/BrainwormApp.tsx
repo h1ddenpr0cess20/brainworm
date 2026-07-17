@@ -10,6 +10,7 @@ import type {
   McpServerConfig,
   PersistedState,
   ReasoningEffort,
+  ResponseItem,
   Source,
   ToolActivity,
   TtsVoice,
@@ -77,6 +78,7 @@ const DEFAULT_SETTINGS: BrainwormSettings = {
   appMode: "chat",
   codeSessionMode: "normal",
   mcpServers: [],
+  codeProjectBrief: "",
   ttsEnabled: false,
   ttsAutoplay: true,
   ttsVoice: "eve",
@@ -176,6 +178,26 @@ function mergeTools(current: ToolActivity[] = [], incoming: ToolActivity[]): Too
   return [...tools.values()];
 }
 
+/**
+ * Flattens conversation history into the shape sent as `messages` in the
+ * chat request body. Assistant turns that carry `responseItems` (mcp_call,
+ * reasoning, message, …) replay those raw items instead of a synthesized
+ * {role, content} turn, so the model keeps memory of prior tool calls and
+ * results across turns.
+ */
+function buildConversationInput(messages: Message[]): Record<string, unknown>[] {
+  const items: Record<string, unknown>[] = [];
+  for (const message of messages) {
+    if (message.status !== "complete" || !message.content) continue;
+    if (message.role === "assistant" && message.responseItems?.length) {
+      items.push(...message.responseItems);
+    } else {
+      items.push({ role: message.role, content: message.content });
+    }
+  }
+  return items;
+}
+
 function currentTimestamp(): number {
   return Date.now();
 }
@@ -231,6 +253,8 @@ function repairPersistedState(saved: PersistedState): PersistedState {
           ? savedSettings.codeSessionMode
           : "normal",
       mcpServers: Array.isArray(savedSettings.mcpServers) ? savedSettings.mcpServers : [],
+      codeProjectBrief:
+        typeof savedSettings.codeProjectBrief === "string" ? savedSettings.codeProjectBrief : "",
     },
   };
 }
@@ -263,10 +287,8 @@ export function BrainwormApp() {
   const enabledMcpServers = state.settings.mcpServers.filter((server) => server.enabled);
   // Server configs carry authorization secrets; only Code requests need them,
   // and disabled servers should never leave the browser.
-  const mcpServersForRequest = () =>
-    state.settings.appMode === "code"
-      ? state.settings.mcpServers.filter((server) => server.enabled)
-      : [];
+  const mcpServersForRequest = (appMode: BrainwormSettings["appMode"] = state.settings.appMode) =>
+    appMode === "code" ? state.settings.mcpServers.filter((server) => server.enabled) : [];
 
   useEffect(() => {
     let cancelled = false;
@@ -348,12 +370,11 @@ export function BrainwormApp() {
 
   const messageCount = activeConversation?.messages.length ?? 0;
   const lastContentLength = activeConversation?.messages.at(-1)?.content.length ?? 0;
+  const lastToolCount = activeConversation?.messages.at(-1)?.tools?.length ?? 0;
   useEffect(() => {
-    // Never scroll the empty welcome screen: on small viewports its content
-    // is taller than the feed and jumping to the bottom cuts off the top.
     if (!messageCount) return;
     feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
-  }, [activeConversation?.id, messageCount, lastContentLength]);
+  }, [activeConversation?.id, messageCount, lastContentLength, lastToolCount]);
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -585,14 +606,17 @@ export function BrainwormApp() {
     const restoreIndex = target.variants?.length
       ? Math.min(target.variantIndex ?? variants.length - 1, variants.length - 1)
       : 0;
-    const requestMessages = activeConversation.messages
-      .slice(0, messageIndex)
-      .filter((message) => message.status === "complete" && message.content)
-      .map(({ role, content }) => ({ role, content }));
+    const requestMessages = buildConversationInput(
+      activeConversation.messages.slice(0, messageIndex),
+    );
+
+    const regenAppMode = target.codeMode ? "code" : state.settings.appMode;
+    const regenCodeMode = target.codeMode ?? state.settings.codeSessionMode;
 
     patchMessage(conversationId, messageId, {
       content: "",
       sources: undefined,
+      responseItems: undefined,
       status: "streaming",
       variants,
       variantIndex: undefined,
@@ -605,9 +629,10 @@ export function BrainwormApp() {
     let accumulated = "";
     let streamedTools: ToolActivity[] = [];
     let finalSources: Source[] = [];
+    let finalItems: ResponseItem[] = [];
     let completed = false;
 
-    const finishVariant = (content: string, sources: Source[]) => {
+    const finishVariant = (content: string, sources: Source[], responseItems: ResponseItem[]) => {
       setState((current) => ({
         ...current,
         conversations: current.conversations.map((conversation) =>
@@ -617,7 +642,7 @@ export function BrainwormApp() {
                 updatedAt: Date.now(),
                 messages: conversation.messages.map((message) => {
                   if (message.id !== messageId) return message;
-                  return appendMessageVariant(message, { content, sources });
+                  return appendMessageVariant(message, { content, sources, responseItems });
                 }),
               }
             : conversation,
@@ -636,10 +661,11 @@ export function BrainwormApp() {
           messages: requestMessages,
           reasoningEffort: state.settings.reasoningEffort,
           webSearch: state.settings.webSearch,
-          mode: state.settings.appMode,
-          codeSessionMode: state.settings.codeSessionMode,
+          mode: regenAppMode,
+          codeSessionMode: regenCodeMode,
           files: [],
-          mcpServers: mcpServersForRequest(),
+          mcpServers: mcpServersForRequest(regenAppMode),
+          projectBrief: regenAppMode === "code" ? state.settings.codeProjectBrief : undefined,
         }),
         signal: abortController.signal,
       });
@@ -663,6 +689,7 @@ export function BrainwormApp() {
         if (event.type === "done") {
           completed = true;
           finalSources = event.sources;
+          finalItems = event.items;
           streamedTools = mergeTools(streamedTools, event.tools);
           patchMessage(conversationId, messageId, { tools: streamedTools });
         }
@@ -673,13 +700,14 @@ export function BrainwormApp() {
         patchMessage(conversationId, messageId, {
           content: restored.content,
           sources: restored.sources,
+          responseItems: restored.responseItems,
           status: "complete",
           variants,
           variantIndex: restoreIndex,
         });
         return;
       }
-      finishVariant(accumulated, finalSources);
+      finishVariant(accumulated, finalSources, finalItems);
       if (accumulated && isTtsActive(state.settings) && state.settings.ttsAutoplay) {
         void autoplayTtsMessage({
           messageId,
@@ -691,12 +719,13 @@ export function BrainwormApp() {
       }
     } catch {
       if (accumulated) {
-        finishVariant(accumulated, finalSources);
+        finishVariant(accumulated, finalSources, finalItems);
       } else {
         const restored = variants[restoreIndex] ?? visibleSnapshot;
         patchMessage(conversationId, messageId, {
           content: restored.content,
           sources: restored.sources,
+          responseItems: restored.responseItems,
           status: abortController.signal.aborted ? "complete" : "error",
           variants,
           variantIndex: restoreIndex,
@@ -956,9 +985,7 @@ export function BrainwormApp() {
         state.settings.appMode === "code" && requestCodeMode === "plan" ? "proposed" : undefined,
     };
     const requestMessages = [
-      ...activeConversation.messages
-        .filter((message) => message.status === "complete" && message.content)
-        .map(({ role, content }) => ({ role, content })),
+      ...buildConversationInput(activeConversation.messages),
       { role: userMessage.role, content: userMessage.content },
     ];
 
@@ -1003,6 +1030,8 @@ export function BrainwormApp() {
           codeSessionMode: requestCodeMode,
           files: filesForRequest.map(({ name, content }) => ({ name, content })),
           mcpServers: mcpServersForRequest(),
+          projectBrief:
+            state.settings.appMode === "code" ? state.settings.codeProjectBrief : undefined,
         }),
         signal: abortController.signal,
       });
@@ -1033,6 +1062,7 @@ export function BrainwormApp() {
             status: "complete",
             sources: event.sources,
             tools: streamedTools,
+            responseItems: event.items,
           });
         }
       }
@@ -1870,6 +1900,22 @@ export function BrainwormApp() {
                         />
                         {state.settings.appMode === "code" && (
                           <>
+                            <label className="project-brief-field">
+                              <span>Project brief</span>
+                              <textarea
+                                defaultValue={state.settings.codeProjectBrief}
+                                onBlur={(event) =>
+                                  updateSettings({ codeProjectBrief: event.target.value })
+                                }
+                                placeholder="Stack, layout, conventions, and anything the agent shouldn't have to rediscover every task."
+                                rows={3}
+                                spellCheck={false}
+                              />
+                              <small>
+                                Sent as standing orientation with every Code request, so the agent
+                                doesn&apos;t have to explore from scratch each time.
+                              </small>
+                            </label>
                             <div className="mcp-list">
                               {state.settings.mcpServers.map((server) => (
                                 <div className="mcp-editor" key={server.id}>

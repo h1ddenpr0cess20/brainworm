@@ -1041,12 +1041,47 @@ a:focus-visible {
 }
 
 .message__tools > div > span {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 6px;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 9px;
+  cursor: help;
+}
+
+.message__tool-tip {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 7px);
+  z-index: 100;
+  width: max-content;
+  max-width: 280px;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  opacity: 0;
+  color: var(--ink);
+  background: var(--paper-raised);
+  box-shadow: 0 8px 24px var(--shadow);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  text-align: left;
+  pointer-events: none;
+  transform: translateY(5px);
+  transition:
+    opacity 100ms ease,
+    transform 100ms ease;
+}
+
+.message__tools > div > span:hover .message__tool-tip,
+.message__tools > div > span:focus-visible .message__tool-tip {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .message__tools i {
@@ -2266,6 +2301,46 @@ a:focus-visible {
 }
 
 .api-key-field small {
+  color: var(--faint);
+  font-size: 8.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.project-brief-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  background: var(--paper-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.project-brief-field textarea {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  outline: 0;
+  resize: vertical;
+  color: var(--ink);
+  background: var(--paper-raised);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.project-brief-field textarea:focus {
+  border-color: var(--accent);
+}
+
+.project-brief-field small {
   color: var(--faint);
   font-size: 8.5px;
   font-weight: 500;

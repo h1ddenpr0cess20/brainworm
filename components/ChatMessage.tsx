@@ -13,6 +13,7 @@ import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/types";
 import { copyText } from "@/lib/desktop";
+import { describeToolActivity, findResponseItem } from "@/lib/toolDetails";
 import { BrainLogo } from "./BrainLogo";
 import { BranchIcon, CopyIcon, RegenerateIcon } from "./Icons";
 import { TtsControls } from "./TtsControls";
@@ -169,13 +170,25 @@ export function ChatMessage({
           <div className="message__tools" aria-label="Tool activity">
             <span>Tools</span>
             <div>
-              {message.tools.map((tool) => (
-                <span className={`is-${tool.status}`} key={tool.id}>
-                  <i />
-                  {tool.server ? `${tool.server} · ` : ""}
-                  {tool.name}
-                </span>
-              ))}
+              {message.tools.map((tool) => {
+                const item = findResponseItem(message.responseItems, tool.id);
+                return (
+                  <span
+                    className={`is-${tool.status}`}
+                    key={tool.id}
+                    tabIndex={item ? 0 : undefined}
+                  >
+                    <i />
+                    {tool.server ? `${tool.server} · ` : ""}
+                    {tool.name}
+                    {item && (
+                      <span className="message__tool-tip" role="tooltip">
+                        {describeToolActivity(tool, item)}
+                      </span>
+                    )}
+                  </span>
+                );
+              })}
             </div>
           </div>
         )}

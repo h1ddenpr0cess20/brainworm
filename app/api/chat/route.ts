@@ -24,18 +24,26 @@ type IncomingMessage = {
   content: string;
 };
 
+/**
+ * A prior-turn item echoed back verbatim (mcp_call, reasoning, message, …)
+ * so the model keeps memory of earlier tool activity across turns without
+ * server-side conversation storage. Shape is whatever xAI last sent us.
+ */
+type IncomingResponseItem = Record<string, unknown>;
+
 type ChatBody = {
-  messages?: IncomingMessage[];
+  messages?: (IncomingMessage | IncomingResponseItem)[];
   reasoningEffort?: ReasoningEffort;
   webSearch?: boolean;
   mode?: AppMode;
   codeSessionMode?: CodeSessionMode;
   files?: { name?: string; content?: string }[];
   mcpServers?: McpServerConfig[];
+  projectBrief?: string;
 };
 
-const MAX_MESSAGES = 80;
-const MAX_TOTAL_CHARACTERS = 200_000;
+const MAX_MESSAGES = 240;
+const MAX_TOTAL_CHARACTERS = 400_000;
 const ALLOWED_EFFORTS = new Set<ReasoningEffort>(["low", "medium", "high"]);
 
 export async function POST(request: Request): Promise<Response> {
@@ -73,9 +81,13 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
   const mcpTools = appMode === "code" ? buildMcpTools(body.mcpServers, codeSessionMode) : [];
+  const projectBrief =
+    appMode === "code" && typeof body.projectBrief === "string"
+      ? body.projectBrief.trim().slice(0, 4_000)
+      : "";
   const systemPrompt =
     appMode === "code"
-      ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(mcpTools.length, codeSessionMode !== "always")}${formatFiles(files)}`
+      ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(mcpTools.length, codeSessionMode !== "always")}${formatProjectBrief(projectBrief)}${formatFiles(files)}`
       : BRAINWORM_SYSTEM_PROMPT;
   const tools = [...(body.webSearch ? [{ type: "web_search" }] : []), ...mcpTools];
 
@@ -165,6 +177,7 @@ export async function POST(request: Request): Promise<Response> {
                 responseId: parsed.responseId,
                 sources: parsed.sources,
                 tools: parsed.tools,
+                items: parsed.items,
               });
               finish();
               return;
@@ -188,13 +201,14 @@ export async function POST(request: Request): Promise<Response> {
                 responseId: parsed.responseId,
                 sources: parsed.sources,
                 tools: parsed.tools,
+                items: parsed.items,
               });
               finish();
               return;
             }
           }
         }
-        emit({ type: "done", sources: [], tools: [] });
+        emit({ type: "done", sources: [], tools: [], items: [] });
         finish();
       } catch (error) {
         if (!request.signal.aborted) {
@@ -303,6 +317,11 @@ function validateFiles(value: ChatBody["files"]): { name: string; content: strin
   return files;
 }
 
+function formatProjectBrief(brief: string): string {
+  if (!brief) return "";
+  return `\n\nProject brief supplied by the user (standing orientation, not a task):\n${brief}`;
+}
+
 function formatFiles(files: { name: string; content: string }[]): string {
   if (!files.length) return "";
   const blocks = files.map(
@@ -311,18 +330,43 @@ function formatFiles(files: { name: string; content: string }[]): string {
   return `\n\nThe user supplied these read-only reference files:${blocks.join("")}`;
 }
 
-function validateMessages(value: ChatBody["messages"]): IncomingMessage[] | null {
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * Accepts either a simple {role, content} turn or a raw item echoed back from
+ * a previous response (mcp_call, reasoning, message, …), which is how
+ * tool-call context survives across turns without server-side storage. Role
+ * is constrained so a simple turn can never smuggle in a system/developer
+ * instruction.
+ */
+export function validateMessages(
+  value: ChatBody["messages"],
+): (IncomingMessage | IncomingResponseItem)[] | null {
   if (!Array.isArray(value) || value.length === 0 || value.length > MAX_MESSAGES) return null;
 
   let total = 0;
-  const messages: IncomingMessage[] = [];
-  for (const entry of value) {
-    if (!entry || (entry.role !== "user" && entry.role !== "assistant")) return null;
-    if (typeof entry.content !== "string" || !entry.content.trim()) return null;
-    total += entry.content.length;
+  let hasUserText = false;
+  const messages: (IncomingMessage | IncomingResponseItem)[] = [];
+  for (const raw of value) {
+    if (!isPlainObject(raw)) return null;
+    const entry: Record<string, unknown> = raw;
+    const role = entry.role;
+    if (role === "user" || role === "assistant") {
+      const content = entry.content;
+      if (typeof content !== "string" || !content.trim()) return null;
+      total += content.length;
+      if (role === "user") hasUserText = true;
+      messages.push({ role, content });
+    } else {
+      if (role !== undefined || typeof entry.type !== "string") return null;
+      total += JSON.stringify(entry).length;
+      messages.push(entry as IncomingResponseItem);
+    }
     if (total > MAX_TOTAL_CHARACTERS) return null;
-    messages.push({ role: entry.role, content: entry.content });
   }
+  if (!hasUserText) return null;
   return messages;
 }
 

@@ -1,5 +1,40 @@
 import { collectHttpSources } from "./sources";
-import type { Source, ToolActivity } from "./types";
+import type { ResponseItem, Source, ToolActivity } from "./types";
+
+const MAX_REPLAYED_ITEMS = 40;
+const MAX_ITEM_STRING = 4_000;
+
+/**
+ * Caps what is kept from a completed response's raw output before it is
+ * persisted and echoed back on a later turn, so unbounded tool output (e.g.
+ * a large file read) can't bloat every subsequent request forever.
+ */
+function truncateStrings(value: unknown, depth = 0): unknown {
+  if (depth > 6) return null;
+  if (typeof value === "string") {
+    return value.length > MAX_ITEM_STRING
+      ? `${value.slice(0, MAX_ITEM_STRING)}…[truncated ${value.length - MAX_ITEM_STRING} chars]`
+      : value;
+  }
+  if (Array.isArray(value))
+    return value.slice(0, 50).map((entry) => truncateStrings(entry, depth + 1));
+  if (value && typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value as Record<string, unknown>)) {
+      result[key] = truncateStrings(val, depth + 1);
+    }
+    return result;
+  }
+  return value;
+}
+
+export function sanitizeResponseItems(output: unknown[] | undefined): ResponseItem[] {
+  if (!Array.isArray(output)) return [];
+  return output
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object")
+    .slice(0, MAX_REPLAYED_ITEMS)
+    .map((item) => truncateStrings(item) as ResponseItem);
+}
 
 export type SseEvent = {
   event?: string;
@@ -41,15 +76,19 @@ type XaiEventPayload = {
   };
 };
 
-export function parseXaiEvent(
-  event: SseEvent,
-):
+export function parseXaiEvent(event: SseEvent):
   | { kind: "delta"; delta: string }
   | { kind: "tool"; tool: ToolActivity }
-  | { kind: "complete"; responseId?: string; sources: Source[]; tools: ToolActivity[] }
+  | {
+      kind: "complete";
+      responseId?: string;
+      sources: Source[];
+      tools: ToolActivity[];
+      items: ResponseItem[];
+    }
   | { kind: "error"; message: string }
   | null {
-  if (event.data === "[DONE]") return { kind: "complete", sources: [], tools: [] };
+  if (event.data === "[DONE]") return { kind: "complete", sources: [], tools: [], items: [] };
 
   let payload: XaiEventPayload;
   try {
@@ -72,6 +111,7 @@ export function parseXaiEvent(
       responseId: payload.response?.id,
       sources: collectHttpSources(payload.response?.output),
       tools: extractToolActivities(payload.response?.output),
+      items: sanitizeResponseItems(payload.response?.output),
     };
   }
   if (type === "error" || type === "response.failed") {

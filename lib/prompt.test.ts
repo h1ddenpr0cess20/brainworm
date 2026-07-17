@@ -13,6 +13,13 @@ describe("Brainworm prompt helpers", () => {
     expect(BRAINWORM_SYSTEM_PROMPT).toContain("constant worm puns are compost");
   });
 
+  it("tells the model to skip web search when it already has the context", () => {
+    expect(BRAINWORM_SYSTEM_PROMPT).toContain("Use web search sparingly");
+    expect(BRAINWORM_SYSTEM_PROMPT).toContain(
+      "do not re-search facts you have already gathered this conversation",
+    );
+  });
+
   it("keeps plan mode read-only and explicit about browser limitations", () => {
     expect(BRAINWORM_CODING_PROMPT).toContain("cannot access or edit the user's real repository");
     expect(codingModeInstruction("plan")).toContain("make no workspace changes");

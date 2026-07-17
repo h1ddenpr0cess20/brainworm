@@ -5,7 +5,7 @@
 
 **A bookish, earth-toned workspace for xAI's Grok — part research companion, part margin scribbler.**
 
-Bring your own xAI API key, open the burrow, and dig.
+Bring your own xAI API key and dig in.
 
 </div>
 

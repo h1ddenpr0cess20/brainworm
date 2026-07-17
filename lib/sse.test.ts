@@ -35,6 +35,7 @@ describe("xAI SSE parsing", () => {
       kind: "complete",
       sources: [],
       tools: [],
+      items: [],
     });
     expect(parseXaiEvent({ data: "not-json" })).toBeNull();
     expect(parseXaiEvent({ data: '{"type":"response.queued"}' })).toBeNull();
@@ -51,51 +52,48 @@ describe("xAI SSE parsing", () => {
   });
 
   it("extracts unique citation URLs from a completed response", () => {
+    const output = [
+      {
+        content: [
+          {
+            annotations: [
+              {
+                type: "url_citation",
+                title: "A field guide",
+                url: "https://example.com/guide",
+              },
+              { type: "url_citation", title: "Duplicate", url: "https://example.com/guide" },
+            ],
+          },
+        ],
+      },
+    ];
     const parsed = parseXaiEvent({
       event: "response.completed",
-      data: JSON.stringify({
-        response: {
-          id: "resp_1",
-          output: [
-            {
-              content: [
-                {
-                  annotations: [
-                    {
-                      type: "url_citation",
-                      title: "A field guide",
-                      url: "https://example.com/guide",
-                    },
-                    { type: "url_citation", title: "Duplicate", url: "https://example.com/guide" },
-                  ],
-                },
-              ],
-            },
-          ],
-        },
-      }),
+      data: JSON.stringify({ response: { id: "resp_1", output } }),
     });
     expect(parsed).toEqual({
       kind: "complete",
       responseId: "resp_1",
       sources: [{ title: "A field guide", url: "https://example.com/guide" }],
       tools: [],
+      items: output,
     });
   });
 
   it("uses the citation host as a title and ignores non-http values", () => {
+    const output = [{ uri: "https://www.example.org/path" }, { url: "file:///private" }, null];
     const parsed = parseXaiEvent({
       data: JSON.stringify({
         type: "response.completed",
-        response: {
-          output: [{ uri: "https://www.example.org/path" }, { url: "file:///private" }, null],
-        },
+        response: { output },
       }),
     });
     expect(parsed).toEqual({
       kind: "complete",
       sources: [{ title: "example.org", url: "https://www.example.org/path" }],
       tools: [],
+      items: output.filter(Boolean),
     });
   });
 
@@ -112,27 +110,45 @@ describe("xAI SSE parsing", () => {
       tool: { id: "tool_1", name: "read_file", server: "repo", status: "running" },
     });
 
+    const output = [
+      {
+        type: "mcp_call",
+        id: "tool_1",
+        name: "read_file",
+        server_label: "repo",
+        status: "completed",
+      },
+    ];
     expect(
       parseXaiEvent({
         data: JSON.stringify({
           type: "response.completed",
-          response: {
-            output: [
-              {
-                type: "mcp_call",
-                id: "tool_1",
-                name: "read_file",
-                server_label: "repo",
-                status: "completed",
-              },
-            ],
-          },
+          response: { output },
         }),
       }),
     ).toEqual({
       kind: "complete",
       sources: [],
       tools: [{ id: "tool_1", name: "read_file", server: "repo", status: "complete" }],
+      items: output,
     });
+  });
+
+  it("truncates oversized items and caps the item count before replay", () => {
+    const hugeOutput = Array.from({ length: 50 }, (_, index) => ({
+      type: "mcp_call",
+      id: `tool_${index}`,
+      output: "x".repeat(5_000),
+    }));
+    const parsed = parseXaiEvent({
+      data: JSON.stringify({
+        type: "response.completed",
+        response: { output: hugeOutput },
+      }),
+    });
+    if (parsed?.kind !== "complete") throw new Error("expected a complete event");
+    expect(parsed.items).toHaveLength(40);
+    expect((parsed.items[0].output as string).length).toBeLessThan(5_000);
+    expect(parsed.items[0].output).toContain("…[truncated");
   });
 });

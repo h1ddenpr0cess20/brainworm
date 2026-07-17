@@ -32,7 +32,11 @@ export type Source = {
 export type MessageVariant = {
   content: string;
   sources?: Source[];
+  responseItems?: ResponseItem[];
 };
+
+/** A raw item from xAI's Responses API `output` array, replayed verbatim on later turns. */
+export type ResponseItem = Record<string, unknown>;
 
 export type Message = {
   id: string;
@@ -46,6 +50,7 @@ export type Message = {
   codeMode?: CodeSessionMode;
   planState?: "proposed" | "approved" | "changes_requested";
   tools?: ToolActivity[];
+  responseItems?: ResponseItem[];
   /** Every completed version of a regenerated assistant reply, oldest first. */
   variants?: MessageVariant[];
   variantIndex?: number;
@@ -77,6 +82,7 @@ export type BrainwormSettings = {
   appMode: AppMode;
   codeSessionMode: CodeSessionMode;
   mcpServers: McpServerConfig[];
+  codeProjectBrief: string;
   ttsEnabled: boolean;
   ttsAutoplay: boolean;
   ttsVoice: string;
@@ -103,5 +109,11 @@ export type PersistedState = {
 export type StreamEvent =
   | { type: "delta"; delta: string }
   | { type: "tool"; tool: ToolActivity }
-  | { type: "done"; responseId?: string; sources: Source[]; tools: ToolActivity[] }
+  | {
+      type: "done";
+      responseId?: string;
+      sources: Source[];
+      tools: ToolActivity[];
+      items: ResponseItem[];
+    }
   | { type: "error"; message: string };

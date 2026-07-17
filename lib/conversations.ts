@@ -4,6 +4,7 @@ export function snapshotMessage(message: Message): MessageVariant {
   return {
     content: message.content,
     sources: message.sources?.map((source) => ({ ...source })),
+    responseItems: message.responseItems?.map((item) => ({ ...item })),
   };
 }
 
@@ -14,6 +15,7 @@ export function selectMessageVariant(message: Message, index: number): Message {
     ...message,
     content: variant.content,
     sources: variant.sources?.map((source) => ({ ...source })),
+    responseItems: variant.responseItems?.map((item) => ({ ...item })),
     variantIndex: index,
     status: "complete",
   };
@@ -25,6 +27,7 @@ export function appendMessageVariant(message: Message, variant: MessageVariant):
     ...message,
     content: variant.content,
     sources: variant.sources?.map((source) => ({ ...source })),
+    responseItems: variant.responseItems?.map((item) => ({ ...item })),
     status: "complete",
     variants,
     variantIndex: variants.length - 1,
@@ -54,6 +57,7 @@ export function branchFromMessage(
       variants: message.variants?.map((variant) => ({
         ...variant,
         sources: variant.sources?.map((item) => ({ ...item })),
+        responseItems: variant.responseItems?.map((item) => ({ ...item })),
       })),
     })),
   };

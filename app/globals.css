@@ -2293,6 +2293,46 @@ a:focus-visible {
   line-height: 1.45;
 }
 
+.project-brief-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--ink-soft);
+  background: var(--paper-soft);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.project-brief-field textarea {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  outline: 0;
+  resize: vertical;
+  color: var(--ink);
+  background: var(--paper-raised);
+  font-family: inherit;
+  font-size: 10.5px;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.project-brief-field textarea:focus {
+  border-color: var(--accent);
+}
+
+.project-brief-field small {
+  color: var(--faint);
+  font-size: 8.5px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
 .segmented,
 .theme-choice {
   display: grid;

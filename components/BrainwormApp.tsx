@@ -38,6 +38,7 @@ import { isDesktopApp, TITLEBAR_HEIGHT } from "@/lib/desktop";
 import { BrainLogo } from "./BrainLogo";
 import { ChatMessage } from "./ChatMessage";
 import { DesktopTitlebar } from "./DesktopTitlebar";
+import { ExportMenu } from "./ExportMenu";
 import { GalleryPanel } from "./GalleryPanel";
 import {
   CloseIcon,
@@ -1302,6 +1303,7 @@ export function BrainwormApp() {
             <span className={`connection-dot ${hasXaiApiKey ? "is-on" : ""}`} />
             <span>{hasXaiApiKey ? "xAI den ready" : "Key needed"}</span>
           </div>
+          <ExportMenu conversation={activeConversation} theme={state.settings.theme} />
         </header>
 
         <div className="feed" ref={feedRef}>

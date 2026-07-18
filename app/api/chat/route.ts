@@ -5,6 +5,7 @@ import {
   mcpModeInstruction,
 } from "@/lib/prompt";
 import { parseXaiEvent, splitSseBuffer } from "@/lib/sse";
+import { isSupportedMcpUrl } from "@/lib/mcpUrl";
 import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
 import type {
@@ -293,14 +294,6 @@ export function buildMcpTools(
   return tools;
 }
 
-function isSupportedMcpUrl(value: string): boolean {
-  try {
-    const protocol = new URL(value).protocol;
-    return protocol === "https:" || protocol === "http:";
-  } catch {
-    return false;
-  }
-}
 
 function validateFiles(value: ChatBody["files"]): { name: string; content: string }[] | null {
   if (value === undefined) return [];

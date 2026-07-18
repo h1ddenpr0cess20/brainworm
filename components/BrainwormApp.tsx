@@ -1949,7 +1949,7 @@ export function BrainwormApp() {
                                       />
                                     </label>
                                     <label className="is-wide">
-                                      <span>HTTPS MCP URL</span>
+                                      <span>MCP URL</span>
                                       <input
                                         type="url"
                                         value={server.url}
@@ -2020,8 +2020,10 @@ export function BrainwormApp() {
                                       </small>
                                     </label>
                                   </div>
-                                  {server.url && !server.url.startsWith("https://") && (
-                                    <p className="mcp-editor__error">MCP URLs must use HTTPS.</p>
+                                  {server.url && !/^https?:\/\//i.test(server.url) && (
+                                    <p className="mcp-editor__error">
+                                      MCP URLs must use HTTP or HTTPS.
+                                    </p>
                                   )}
                                 </div>
                               ))}

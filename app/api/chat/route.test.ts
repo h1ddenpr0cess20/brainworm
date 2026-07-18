@@ -33,7 +33,7 @@ describe("user-configured MCP tools", () => {
     expect(buildMcpTools([server], "always")[0]?.allowed_tools).toEqual(server.allowedTools);
   });
 
-  it("accepts HTTP MCP server URLs", () => {
+  it("accepts HTTP MCP server URLs only for loopback endpoints", () => {
     const httpServer = {
       ...server,
       id: "local-http",
@@ -41,6 +41,12 @@ describe("user-configured MCP tools", () => {
       url: "http://127.0.0.1:9620/mcp",
     };
     expect(buildMcpTools([httpServer], "normal")[0]?.server_url).toBe(httpServer.url);
+    expect(
+      buildMcpTools(
+        [{ ...httpServer, id: "remote-http", url: "http://mcp.example.com/mcp" }],
+        "normal",
+      ),
+    ).toEqual([]);
   });
 
   it("does not let disabled servers crowd enabled ones out of the cap", () => {

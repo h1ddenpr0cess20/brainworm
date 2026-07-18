@@ -259,7 +259,12 @@ export function buildMcpTools(
     const serverUrl = typeof server.url === "string" ? server.url.trim() : "";
     const rawLabel = typeof server.label === "string" ? server.label.trim() : "";
     const serverLabel = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
-    if (!serverUrl || !serverLabel || seenLabels.has(serverLabel) || !isSupportedMcpUrl(serverUrl))
+    if (
+      !serverUrl ||
+      !serverLabel ||
+      seenLabels.has(serverLabel) ||
+      !isSupportedMcpUrl(serverUrl)
+    )
       continue;
     const sourceTools = mode === "always" ? server.allowedTools : server.readOnlyTools;
     const allowedTools = Array.isArray(sourceTools)

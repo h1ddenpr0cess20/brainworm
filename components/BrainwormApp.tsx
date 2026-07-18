@@ -19,6 +19,7 @@ import { makeConversationTitle } from "@/lib/prompt";
 import { parseCodeCommand } from "@/lib/codeCommands";
 import { readStreamEvents } from "@/lib/chatStream";
 import { isTtsActive } from "@/lib/tts";
+import { isSupportedMcpUrl } from "@/lib/mcpUrl";
 import {
   appendMessageVariant,
   branchFromMessage,
@@ -2020,9 +2021,9 @@ export function BrainwormApp() {
                                       </small>
                                     </label>
                                   </div>
-                                  {server.url && !/^https?:\/\//i.test(server.url) && (
+                                  {server.url && !isSupportedMcpUrl(server.url) && (
                                     <p className="mcp-editor__error">
-                                      MCP URLs must use HTTP or HTTPS.
+                                      MCP URLs must use HTTPS; HTTP is allowed only for localhost.
                                     </p>
                                   )}
                                 </div>

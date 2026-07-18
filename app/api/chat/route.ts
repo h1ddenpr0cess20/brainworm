@@ -258,7 +258,7 @@ export function buildMcpTools(
     const serverUrl = typeof server.url === "string" ? server.url.trim() : "";
     const rawLabel = typeof server.label === "string" ? server.label.trim() : "";
     const serverLabel = rawLabel.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 48);
-    if (!serverUrl || !serverLabel || seenLabels.has(serverLabel) || !isSecureUrl(serverUrl))
+    if (!serverUrl || !serverLabel || seenLabels.has(serverLabel) || !isSupportedMcpUrl(serverUrl))
       continue;
     const sourceTools = mode === "always" ? server.allowedTools : server.readOnlyTools;
     const allowedTools = Array.isArray(sourceTools)
@@ -293,9 +293,10 @@ export function buildMcpTools(
   return tools;
 }
 
-function isSecureUrl(value: string): boolean {
+function isSupportedMcpUrl(value: string): boolean {
   try {
-    return new URL(value).protocol === "https:";
+    const protocol = new URL(value).protocol;
+    return protocol === "https:" || protocol === "http:";
   } catch {
     return false;
   }

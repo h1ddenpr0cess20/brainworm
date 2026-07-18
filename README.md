@@ -14,7 +14,7 @@ Bring your own xAI API key and dig in.
 Brainworm is a Next.js app with three native xAI workspaces wrapped in a compact rail, a browser-local thread library, and a manuscript-like feed:
 
 - 📖 **Chat** — streamed Grok 4.5 responses with reasoning effort, native web search, citation breadcrumbs, reply regeneration and branching, and xAI text-to-speech.
-- 🌿 **Code** — Normal, Plan, and Always-approve session modes, attached source context, user-configured HTTPS MCP workspaces, structured tool activity, and plan approval before implementation.
+- 🌿 **Code** — Normal, Plan, and Always-approve session modes, attached source context, user-configured HTTP(S) MCP workspaces, structured tool activity, and plan approval before implementation.
 - 🎨 **Imagine** — Grok Imagine generation and editing with fast or quality models, aspect ratios, 1K/2K output, and a local image library.
 
 ## Screenshots
@@ -65,12 +65,12 @@ Read the [AI Output Disclaimer and Conditions of Use](docs/ai-output-disclaimer.
 
 ## MCP workspaces
 
-Add up to eight remote HTTPS MCP servers under Settings → Workspaces. Each server has two exact tool allowlists:
+Add up to eight remote HTTP or HTTPS MCP servers under Settings → Workspaces. Each server has two exact tool allowlists:
 
 - **Read-only tools** are exposed in Normal and Plan modes.
 - **Always-approve tools** are exposed only after you select Always-approve or approve a plan for implementation.
 
-An empty allowlist exposes no tools. Server labels are normalized and deduplicated, insecure URLs are rejected, and authorization headers stay browser-local between requests.
+An empty allowlist exposes no tools. Server labels are normalized and deduplicated, non-HTTP(S) URLs are rejected, and authorization headers stay browser-local between requests. Use HTTPS whenever traffic crosses an untrusted network.
 
 ## Development
 

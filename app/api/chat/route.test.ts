@@ -33,6 +33,16 @@ describe("user-configured MCP tools", () => {
     expect(buildMcpTools([server], "always")[0]?.allowed_tools).toEqual(server.allowedTools);
   });
 
+  it("accepts HTTP MCP server URLs", () => {
+    const httpServer = {
+      ...server,
+      id: "local-http",
+      label: "local",
+      url: "http://127.0.0.1:9620/mcp",
+    };
+    expect(buildMcpTools([httpServer], "normal")[0]?.server_url).toBe(httpServer.url);
+  });
+
   it("does not let disabled servers crowd enabled ones out of the cap", () => {
     const disabled = Array.from({ length: 8 }, (_, index) => ({
       ...server,
@@ -42,11 +52,11 @@ describe("user-configured MCP tools", () => {
     expect(buildMcpTools([...disabled, server], "normal")).toHaveLength(1);
   });
 
-  it("rejects insecure, disabled, duplicate, and unbounded servers", () => {
+  it("rejects unsupported URLs, disabled, duplicate, and unbounded servers", () => {
     expect(
       buildMcpTools(
         [
-          { ...server, id: "http", url: "http://localhost:3000/mcp" },
+          { ...server, id: "ftp", url: "ftp://localhost/mcp" },
           { ...server, id: "disabled", enabled: false },
           { ...server, id: "empty", label: "empty", readOnlyTools: [] },
           server,

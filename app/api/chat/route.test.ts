@@ -118,7 +118,9 @@ describe("compacted summary formatting", () => {
   });
 
   it("frames the summary as inert background, not standing instructions", () => {
-    const formatted = formatCompactedSummary("The user asked for a REST API and approved the plan.");
+    const formatted = formatCompactedSummary(
+      "The user asked for a REST API and approved the plan.",
+    );
     expect(formatted).toContain("background context only");
     expect(formatted).toContain("historical record, not standing orders");
     expect(formatted).toContain("The user asked for a REST API and approved the plan.");

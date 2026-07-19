@@ -90,7 +90,8 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const mcpTools = !compact && appMode === "code" ? buildMcpTools(body.mcpServers, codeSessionMode) : [];
+  const mcpTools =
+    !compact && appMode === "code" ? buildMcpTools(body.mcpServers, codeSessionMode) : [];
   const projectBrief =
     !compact && appMode === "code" && typeof body.projectBrief === "string"
       ? body.projectBrief.trim().slice(0, 4_000)
@@ -104,9 +105,7 @@ export async function POST(request: Request): Promise<Response> {
     : appMode === "code"
       ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(mcpTools.length, codeSessionMode !== "always")}${formatProjectBrief(projectBrief)}${formatFiles(files)}${formatCompactedSummary(compactedSummary)}`
       : `${BRAINWORM_SYSTEM_PROMPT}${formatCompactedSummary(compactedSummary)}`;
-  const tools = compact
-    ? []
-    : [...(body.webSearch ? [{ type: "web_search" }] : []), ...mcpTools];
+  const tools = compact ? [] : [...(body.webSearch ? [{ type: "web_search" }] : []), ...mcpTools];
 
   let upstream: Response;
   try {

@@ -19,8 +19,6 @@ export function normalizeChatHref(href: string | undefined) {
   if (value.startsWith("//")) return `https:${value}`;
   if (FILE_LIKE_NAME.test(value)) return value;
   if (!HOST_LIKE_URL.test(value)) return value;
-  const scheme = /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3})(?::|\/|$)/i.test(value)
-    ? "http"
-    : "https";
+  const scheme = /^(?:localhost|(?:\d{1,3}\.){3}\d{1,3})(?::|\/|$)/i.test(value) ? "http" : "https";
   return `${scheme}://${value}`;
 }

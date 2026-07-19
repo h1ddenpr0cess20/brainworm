@@ -1352,11 +1352,7 @@ export function BrainwormApp() {
     // consuming whatever is staged in the composer — those files (and the
     // in-progress draft) belong to the user's next message, and the
     // conversation's existing attachments are re-inlined from history anyway.
-    void sendMessage(
-      "Implement the approved plan. Complete the work and verify it.",
-      "always",
-      [],
-    );
+    void sendMessage("Implement the approved plan. Complete the work and verify it.", "always", []);
   };
 
   const requestPlanChanges = (messageId: string) => {

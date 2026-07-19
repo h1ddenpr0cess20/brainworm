@@ -1,6 +1,6 @@
 {
   "name": "brainworm",
-  "version": "1.2.1",
+  "version": "1.2.0",
   "private": true,
   "description": "A bookish, earth-toned xAI chat companion built with Next.js.",
   "author": "Dustin Whyte",

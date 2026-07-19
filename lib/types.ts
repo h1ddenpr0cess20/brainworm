@@ -58,6 +58,10 @@ export type Message = {
   /** Every completed version of a regenerated assistant reply, oldest first. */
   variants?: MessageVariant[];
   variantIndex?: number;
+  // UI-only status line (compaction confirmations, queue feedback). Rendered
+  // in the transcript but never sent to xAI and never counted toward the
+  // history token budget.
+  notice?: boolean;
 };
 
 export type GeneratedImageRef = {
@@ -77,6 +81,11 @@ export type Conversation = {
   createdAt: number;
   updatedAt: number;
   messages: Message[];
+  // A running summary that replaces older turns in the request history (see
+  // lib/compaction.ts). `compactedThroughId` is the id of the last message
+  // already folded into `compactedSummary`.
+  compactedSummary?: string;
+  compactedThroughId?: string;
 };
 
 export type BrainwormSettings = {
@@ -95,7 +104,14 @@ export type BrainwormSettings = {
   imagineAspectRatio: string;
   imagineResolution: "1k" | "2k";
   imagineCount: number;
+  // When a conversation nears its history token budget, summarize older
+  // turns (lib/compaction.ts) instead of letting the server-side message cap
+  // silently drop them.
+  autoCompact: boolean;
 };
+
+export type PendingFile = { name: string; content: string; size: number };
+export type PendingImage = { name: string; dataUrl: string };
 
 export type TtsVoice = {
   voiceId: string;

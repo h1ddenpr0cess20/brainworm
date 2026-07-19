@@ -12,9 +12,12 @@ export default defineConfig({
       reporter: ["text", "json-summary", "html"],
       include: [
         "lib/chatLinks.ts",
+        "lib/compaction.ts",
         "lib/conversations.ts",
+        "lib/messageQueue.ts",
         "lib/prompt.ts",
         "lib/sse.ts",
+        "lib/tokenBudget.ts",
         "lib/tts.ts",
         "lib/xaiKey.ts",
       ],

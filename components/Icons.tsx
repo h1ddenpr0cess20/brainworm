@@ -159,3 +159,11 @@ export const EyeOffIcon = (props: IconProps) => (
     <path d="M9.9 9.9a3 3 0 004.2 4.2" />
   </Icon>
 );
+export const CompressIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M9 3v4a2 2 0 01-2 2H3" />
+    <path d="M15 3v4a2 2 0 002 2h4" />
+    <path d="M9 21v-4a2 2 0 00-2-2H3" />
+    <path d="M15 21v-4a2 2 0 012-2h4" />
+  </Icon>
+);

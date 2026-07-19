@@ -64,6 +64,22 @@ describe("message variants", () => {
     const message = assistant({ variants: [{ content: "First answer" }] });
     expect(selectMessageVariant(message, 8)).toBe(message);
   });
+
+  it("carries plan state per variant so switching versions restores the right one", () => {
+    const proposed = assistant({ codeMode: "plan", planState: "proposed" });
+    const approved = appendMessageVariant(proposed, {
+      content: "Approved answer",
+      codeMode: "normal",
+      planState: undefined,
+    });
+
+    expect(approved.codeMode).toBe("normal");
+    expect(approved.planState).toBeUndefined();
+
+    const backToFirst = selectMessageVariant(approved, 0);
+    expect(backToFirst.codeMode).toBe("plan");
+    expect(backToFirst.planState).toBe("proposed");
+  });
 });
 
 describe("conversation branching", () => {

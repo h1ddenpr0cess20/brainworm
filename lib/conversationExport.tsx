@@ -1,8 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
-import { normalizeChatHref } from "./chatLinks";
 import type { Conversation, MessageRole, Source, Theme } from "./types";
 
 export type ExportFormatKey = "txt" | "md" | "html" | "json" | "csv";
@@ -50,13 +49,6 @@ const HTML_COMPONENTS: Components = {
   ),
 };
 
-// Mirrors ChatMessage.tsx's urlTransform: without it, a scheme-less link
-// ("example.com/docs") is stripped by react-markdown's sanitizer and the
-// exported HTML file ends up with a dead link instead of the intended URL.
-function chatUrlTransform(url: string) {
-  return defaultUrlTransform(normalizeChatHref(url) ?? "");
-}
-
 /** Renders markdown to a static HTML string with the same parser and highlighter the live chat uses. */
 function renderMarkdown(text: string): string {
   if (!text) return "";
@@ -64,7 +56,6 @@ function renderMarkdown(text: string): string {
     <ReactMarkdown
       remarkPlugins={[remarkGfm]}
       rehypePlugins={[rehypeHighlight]}
-      urlTransform={chatUrlTransform}
       components={HTML_COMPONENTS}
     >
       {text}

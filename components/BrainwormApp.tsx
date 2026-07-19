@@ -8,8 +8,6 @@ import type {
   Message,
   MessageVariant,
   McpServerConfig,
-  PendingFile,
-  PendingImage,
   PersistedState,
   ReasoningEffort,
   ResponseItem,
@@ -27,18 +25,6 @@ import {
   selectMessageVariant as selectVariant,
   snapshotMessage,
 } from "@/lib/conversations";
-import {
-  buildCompactionRequestContent,
-  estimateActiveHistoryTokens,
-  uncompactedMessages,
-} from "@/lib/compaction";
-import { HISTORY_TOKEN_BUDGET } from "@/lib/tokenBudget";
-import {
-  enqueueMessage,
-  nextQueuedMessageForConversation,
-  removeQueuedMessage,
-  type QueuedMessage,
-} from "@/lib/messageQueue";
 import { loadState, loadXaiApiKey, saveState, saveXaiApiKey } from "@/lib/storage";
 import {
   base64ToBlob,
@@ -59,7 +45,6 @@ import {
   CloseIcon,
   CodeIcon,
   CheckIcon,
-  CompressIcon,
   EyeIcon,
   EyeOffIcon,
   LibraryIcon,
@@ -83,6 +68,8 @@ type SettingsTab = "model" | "tools" | "voice" | "workspaces" | "theme" | "data"
 type Health = {
   model: string;
 };
+type PendingFile = { name: string; content: string; size: number };
+type PendingImage = { name: string; dataUrl: string };
 
 const DEFAULT_SETTINGS: BrainwormSettings = {
   reasoningEffort: "medium",
@@ -100,7 +87,6 @@ const DEFAULT_SETTINGS: BrainwormSettings = {
   imagineAspectRatio: "auto",
   imagineResolution: "1k",
   imagineCount: 1,
-  autoCompact: false,
 };
 
 // Wordmark's current xAI catalog is the resilient fallback; the live API
@@ -165,7 +151,6 @@ const CODE_COMMANDS = [
   { command: "/effort", description: "Set low, medium, or high reasoning" },
   { command: "/search", description: "Toggle live web search" },
   { command: "/new", description: "Start a fresh coding session" },
-  { command: "/compact", description: "Summarize older turns to free up history" },
 ];
 
 function makeId(prefix: string): string {
@@ -203,7 +188,7 @@ function mergeTools(current: ToolActivity[] = [], incoming: ToolActivity[]): Too
 function buildConversationInput(messages: Message[]): Record<string, unknown>[] {
   const items: Record<string, unknown>[] = [];
   for (const message of messages) {
-    if (message.status !== "complete" || !message.content || message.notice) continue;
+    if (message.status !== "complete" || !message.content) continue;
     if (message.role === "assistant" && message.responseItems?.length) {
       items.push(...message.responseItems);
     } else {
@@ -290,13 +275,10 @@ export function BrainwormApp() {
   const [xaiApiKey, setXaiApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [effortMenuOpen, setEffortMenuOpen] = useState(false);
-  const [compactingConversationId, setCompactingConversationId] = useState("");
-  const [messageQueue, setMessageQueue] = useState<QueuedMessage[]>([]);
   const abortRef = useRef<AbortController | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const queuedSendRef = useRef<(message: QueuedMessage) => void>(() => {});
 
   const activeConversation =
     state.conversations.find((item) => item.id === state.activeConversationId) ??
@@ -541,7 +523,6 @@ export function BrainwormApp() {
         .flatMap((message) => message.images?.map((image) => image.id) ?? [])
         .filter((imageId) => !retainedImageIds.has(imageId)) ?? [];
     void Promise.all(imageIds.map((imageId) => deleteImageBlob(imageId)));
-    setMessageQueue((current) => current.filter((message) => message.conversationId !== id));
     setState((current) => {
       const remaining = current.conversations.filter((item) => item.id !== id);
       if (!remaining.length) return makeInitialState();
@@ -625,25 +606,12 @@ export function BrainwormApp() {
     const restoreIndex = target.variants?.length
       ? Math.min(target.variantIndex ?? variants.length - 1, variants.length - 1)
       : 0;
-    const priorMessages = activeConversation.messages.slice(0, messageIndex);
-    // Regenerating a turn that predates the compaction marker re-runs against
-    // the full verbatim history (uncompactedMessages returns everything when
-    // the marker isn't in priorMessages); the summary is dropped for that
-    // request so the model doesn't see those turns twice — condensed and
-    // verbatim.
-    const marker = activeConversation.compactedThroughId;
-    const summaryForRegenerate =
-      !marker || priorMessages.some((message) => message.id === marker)
-        ? activeConversation.compactedSummary
-        : undefined;
-    const historyForRegenerate = uncompactedMessages(priorMessages, marker);
-    const requestMessages = buildConversationInput(historyForRegenerate);
+    const requestMessages = buildConversationInput(
+      activeConversation.messages.slice(0, messageIndex),
+    );
 
     const regenAppMode = target.codeMode ? "code" : state.settings.appMode;
     const regenCodeMode = target.codeMode ?? state.settings.codeSessionMode;
-    const regenCodeModeField = regenAppMode === "code" ? regenCodeMode : undefined;
-    const regenPlanState =
-      regenAppMode === "code" && regenCodeMode === "plan" ? "proposed" : undefined;
 
     patchMessage(conversationId, messageId, {
       content: "",
@@ -674,13 +642,7 @@ export function BrainwormApp() {
                 updatedAt: Date.now(),
                 messages: conversation.messages.map((message) => {
                   if (message.id !== messageId) return message;
-                  return appendMessageVariant(message, {
-                    content,
-                    sources,
-                    responseItems,
-                    codeMode: regenCodeModeField,
-                    planState: regenPlanState,
-                  });
+                  return appendMessageVariant(message, { content, sources, responseItems });
                 }),
               }
             : conversation,
@@ -704,7 +666,6 @@ export function BrainwormApp() {
           files: [],
           mcpServers: mcpServersForRequest(regenAppMode),
           projectBrief: regenAppMode === "code" ? state.settings.codeProjectBrief : undefined,
-          compactedSummary: summaryForRegenerate,
         }),
         signal: abortController.signal,
       });
@@ -740,8 +701,6 @@ export function BrainwormApp() {
           content: restored.content,
           sources: restored.sources,
           responseItems: restored.responseItems,
-          codeMode: restored.codeMode,
-          planState: restored.planState,
           status: "complete",
           variants,
           variantIndex: restoreIndex,
@@ -767,8 +726,6 @@ export function BrainwormApp() {
           content: restored.content,
           sources: restored.sources,
           responseItems: restored.responseItems,
-          codeMode: restored.codeMode,
-          planState: restored.planState,
           status: abortController.signal.aborted ? "complete" : "error",
           variants,
           variantIndex: restoreIndex,
@@ -933,143 +890,19 @@ export function BrainwormApp() {
     }
   };
 
-  // Client-only status line (compaction confirmations, queue feedback): shown
-  // in the transcript but excluded from the request history and token budget
-  // via Message.notice.
-  const appendNotice = (conversationId: string, content: string, isError = true) => {
-    const notice: Message = {
-      id: makeId("notice"),
-      role: "assistant",
-      content,
-      createdAt: currentTimestamp(),
-      status: isError ? "error" : "complete",
-      notice: true,
-    };
-    setState((current) => ({
-      ...current,
-      conversations: current.conversations.map((conversation) =>
-        conversation.id === conversationId
-          ? { ...conversation, messages: [...conversation.messages, notice] }
-          : conversation,
-      ),
-    }));
-  };
-
-  // Folds a conversation's older turns into a running summary
-  // (lib/compaction.ts) so they keep informing the model without being
-  // resent verbatim. Combines whatever summary already exists with
-  // everything since the last compaction, so repeated compactions never
-  // forget what an earlier one already condensed. Reuses streamingMessageId
-  // (with a synthetic id, since no real message corresponds to this
-  // background request) so every existing streaming guard — blocking sends,
-  // regenerate, and the composer's stop button — applies to it for free.
-  const compactConversation = async (
-    conversationId: string,
-  ): Promise<{ summary: string; throughId: string } | null> => {
-    const conversation = state.conversations.find((item) => item.id === conversationId);
-    if (!conversation) return null;
-    if (streamingMessageId) {
-      appendNotice(conversationId, "Wait for the current response to finish before compacting.");
-      return null;
-    }
-    const tail = uncompactedMessages(conversation.messages, conversation.compactedThroughId);
-    const foldable = tail.filter(
-      (message) => message.content.trim() && message.status === "complete" && !message.notice,
-    );
-    if (!foldable.length) return null;
-    if (!hasXaiApiKey) {
-      setSettingsTab("model");
-      setPanel("settings");
-      return null;
-    }
-
-    const compactId = `compact_${conversationId}`;
-    setCompactingConversationId(conversationId);
-    setStreamingMessageId(compactId);
-    const abortController = new AbortController();
-    abortRef.current = abortController;
-    try {
-      const content = buildCompactionRequestContent(conversation.compactedSummary, tail);
-      const response = await fetch("/api/chat", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${xaiApiKey.trim()}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          messages: [{ role: "user", content }],
-          reasoningEffort: state.settings.reasoningEffort,
-          compact: true,
-        }),
-        signal: abortController.signal,
-      });
-      if (!response.ok || !response.body) {
-        const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(payload?.error ?? `The request failed (${response.status}).`);
-      }
-
-      let accumulated = "";
-      for await (const event of readStreamEvents(response.body)) {
-        if (event.type === "delta") accumulated += event.delta;
-        if (event.type === "error") throw new Error(event.message);
-      }
-      if (!accumulated.trim()) {
-        appendNotice(conversationId, "Compaction produced no summary.");
-        return null;
-      }
-
-      const summary = accumulated.trim();
-      const throughId = tail[tail.length - 1].id;
-      setState((current) => ({
-        ...current,
-        conversations: current.conversations.map((item) =>
-          item.id === conversationId
-            ? { ...item, compactedSummary: summary, compactedThroughId: throughId }
-            : item,
-        ),
-      }));
-      appendNotice(
-        conversationId,
-        `Compacted ${foldable.length} message${foldable.length === 1 ? "" : "s"} into a summary.`,
-        false,
-      );
-      return { summary, throughId };
-    } catch (error) {
-      if (!abortController.signal.aborted) {
-        appendNotice(conversationId, error instanceof Error ? error.message : "Compaction failed.");
-      }
-      return null;
-    } finally {
-      setCompactingConversationId("");
-      setStreamingMessageId(null);
-      abortRef.current = null;
-    }
-  };
-
   const sendMessage = async (
     textOverride?: string,
     codeModeOverride?: BrainwormSettings["codeSessionMode"],
-    filesOverride?: PendingFile[],
   ) => {
     let text = (textOverride ?? input).trim();
-    if (!text || !activeConversation) return;
+    if (!text || streamingMessageId || !activeConversation) return;
     if (!hasXaiApiKey) {
       setSettingsTab("model");
       setPanel("settings");
-      return;
-    }
-
-    // Available in every mode, and checked before the streaming/queue split
-    // below so it can run immediately even mid-response — it operates on the
-    // conversation's own busy-guard (compactConversation), not this one's.
-    if (text.toLowerCase() === "/compact") {
-      setInput("");
-      void compactConversation(activeConversation.id);
       return;
     }
 
     if (state.settings.appMode === "imagine") {
-      if (streamingMessageId) return;
       await generateImagine(text);
       return;
     }
@@ -1131,45 +964,6 @@ export function BrainwormApp() {
       }
     }
 
-    // A dequeued replay carries its own snapshotted files (even an empty
-    // array), so only a fresh composer submission — where filesOverride is
-    // absent — should queue behind an in-flight response or touch composer
-    // state below.
-    const isFreshSubmission = filesOverride === undefined;
-    if (streamingMessageId && isFreshSubmission) {
-      setMessageQueue((current) =>
-        enqueueMessage(current, {
-          id: makeId("queued"),
-          conversationId: activeConversation.id,
-          content: text,
-          codeMode: requestCodeMode,
-          files: pendingFiles,
-        }),
-      );
-      setInput("");
-      setPendingFiles([]);
-      return;
-    }
-
-    let compactedSummary = activeConversation.compactedSummary;
-    let compactedThroughId = activeConversation.compactedThroughId;
-    if (state.settings.autoCompact) {
-      const tokensInPlay = estimateActiveHistoryTokens(
-        activeConversation.messages,
-        compactedSummary,
-        compactedThroughId,
-      );
-      if (tokensInPlay > HISTORY_TOKEN_BUDGET) {
-        const compacted = await compactConversation(activeConversation.id);
-        if (compacted) {
-          compactedSummary = compacted.summary;
-          compactedThroughId = compacted.throughId;
-        }
-      }
-    }
-
-    const files = filesOverride ?? pendingFiles;
-    const historyForRequest = uncompactedMessages(activeConversation.messages, compactedThroughId);
     const now = currentTimestamp();
     const conversationId = activeConversation.id;
     const userMessage: Message = {
@@ -1178,7 +972,7 @@ export function BrainwormApp() {
       content: text,
       createdAt: now,
       status: "complete",
-      attachments: files.map((file) => file.name),
+      attachments: pendingFiles.map((file) => file.name),
     };
     const assistantMessage: Message = {
       id: makeId("worm"),
@@ -1191,14 +985,13 @@ export function BrainwormApp() {
         state.settings.appMode === "code" && requestCodeMode === "plan" ? "proposed" : undefined,
     };
     const requestMessages = [
-      ...buildConversationInput(historyForRequest),
+      ...buildConversationInput(activeConversation.messages),
       { role: userMessage.role, content: userMessage.content },
     ];
 
-    if (isFreshSubmission) {
-      setInput("");
-      setPendingFiles([]);
-    }
+    setInput("");
+    const filesForRequest = pendingFiles;
+    setPendingFiles([]);
     setStreamingMessageId(assistantMessage.id);
     setState((current) => ({
       ...current,
@@ -1235,11 +1028,10 @@ export function BrainwormApp() {
           webSearch: state.settings.webSearch,
           mode: state.settings.appMode,
           codeSessionMode: requestCodeMode,
-          files: files.map(({ name, content }) => ({ name, content })),
+          files: filesForRequest.map(({ name, content }) => ({ name, content })),
           mcpServers: mcpServersForRequest(),
           projectBrief:
             state.settings.appMode === "code" ? state.settings.codeProjectBrief : undefined,
-          compactedSummary,
         }),
         signal: abortController.signal,
       });
@@ -1327,32 +1119,11 @@ export function BrainwormApp() {
     }
   };
 
-  useEffect(() => {
-    queuedSendRef.current = (message) => {
-      void sendMessage(message.content, message.codeMode, message.files);
-    };
-  });
-
-  useEffect(() => {
-    if (streamingMessageId || !activeConversation) return;
-    const next = nextQueuedMessageForConversation(messageQueue, activeConversation.id);
-    if (!next) return;
-    const timer = window.setTimeout(() => {
-      setMessageQueue((current) => removeQueuedMessage(current, next.id));
-      queuedSendRef.current(next);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [activeConversation, messageQueue, streamingMessageId]);
-
   const approvePlan = (messageId: string) => {
     if (streamingMessageId) return;
     patchMessage(activeConversation.id, messageId, { planState: "approved" });
     updateSettings({ codeSessionMode: "always" });
-    // The empty files override keeps the approval turn from silently
-    // consuming whatever is staged in the composer — those files (and the
-    // in-progress draft) belong to the user's next message, and the
-    // conversation's existing attachments are re-inlined from history anyway.
-    void sendMessage("Implement the approved plan. Complete the work and verify it.", "always", []);
+    void sendMessage("Implement the approved plan. Complete the work and verify it.", "always");
   };
 
   const requestPlanChanges = (messageId: string) => {
@@ -1393,20 +1164,6 @@ export function BrainwormApp() {
 
   const turns =
     activeConversation?.messages.filter((message) => message.role === "user").length ?? 0;
-
-  const activeQueuedMessages = messageQueue.filter(
-    (message) => message.conversationId === activeConversation?.id,
-  );
-  const activeHistoryTokens = activeConversation
-    ? estimateActiveHistoryTokens(
-        activeConversation.messages,
-        activeConversation.compactedSummary,
-        activeConversation.compactedThroughId,
-      )
-    : 0;
-  const activeHistoryRatio = activeHistoryTokens / HISTORY_TOKEN_BUDGET;
-  const isCompacting = compactingConversationId === activeConversation?.id;
-  const canQueueWhileStreaming = state.settings.appMode !== "imagine";
 
   return (
     <div
@@ -1612,37 +1369,6 @@ export function BrainwormApp() {
           )}
         </div>
 
-        {activeQueuedMessages.length > 0 && (
-          <section className="message-queue" aria-label="Queued messages">
-            <header>
-              <strong>{activeQueuedMessages.length} queued</strong>
-              <span>Sent in order after the current response</span>
-            </header>
-            <ol>
-              {activeQueuedMessages.map((message) => (
-                <li key={message.id}>
-                  <span className="message-queue__mode">{codeModeLabel(message.codeMode)}</span>
-                  <span className="message-queue__copy">{message.content}</span>
-                  {message.files.length > 0 && (
-                    <span className="message-queue__files">
-                      {message.files.length} file{message.files.length === 1 ? "" : "s"}
-                    </span>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setMessageQueue((current) => removeQueuedMessage(current, message.id))
-                    }
-                    aria-label="Remove queued message"
-                  >
-                    <CloseIcon />
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
-
         <div className="composer-wrap">
           <div className="composer">
             {state.settings.appMode === "code" && (
@@ -1770,15 +1496,13 @@ export function BrainwormApp() {
                 }
               }}
               placeholder={
-                streamingMessageId && canQueueWhileStreaming
-                  ? "Queue another message…"
-                  : state.settings.appMode === "code"
-                    ? "Describe the task, attach code, or type /plan…"
-                    : state.settings.appMode === "imagine"
-                      ? pendingImage
-                        ? "Describe how Grok Imagine should edit this image…"
-                        : "Describe an image to unearth…"
-                      : "Leave a thought in the margins…"
+                state.settings.appMode === "code"
+                  ? "Describe the task, attach code, or type /plan…"
+                  : state.settings.appMode === "imagine"
+                    ? pendingImage
+                      ? "Describe how Grok Imagine should edit this image…"
+                      : "Describe an image to unearth…"
+                    : "Leave a thought in the margins…"
               }
               aria-label="Message Brainworm"
             />
@@ -1820,28 +1544,7 @@ export function BrainwormApp() {
                 {state.settings.appMode === "code" && enabledMcpServers.length > 0
                   ? ` · ${enabledMcpServers.length} MCP`
                   : ""}
-                {isCompacting ? " · compacting…" : ""}
               </span>
-              {activeConversation && activeConversation.messages.length > 0 && (
-                <>
-                  <div
-                    className={`context-meter${activeHistoryRatio >= 0.85 ? " is-warn" : ""}`}
-                    title={`${activeHistoryTokens.toLocaleString()} / ${HISTORY_TOKEN_BUDGET.toLocaleString()} history tokens${activeConversation.compactedSummary ? " (includes a compacted summary)" : ""}`}
-                  >
-                    <span style={{ width: `${Math.min(100, activeHistoryRatio * 100)}%` }} />
-                  </div>
-                  <button
-                    type="button"
-                    className={`composer__compact${isCompacting ? " is-compacting" : ""}`}
-                    onClick={() => void compactConversation(activeConversation.id)}
-                    disabled={Boolean(streamingMessageId)}
-                    title={isCompacting ? "Compacting…" : "Compact conversation history"}
-                    aria-label="Compact conversation history"
-                  >
-                    <CompressIcon />
-                  </button>
-                </>
-              )}
               {(state.settings.appMode === "code" || state.settings.appMode === "imagine") && (
                 <>
                   <input
@@ -1884,26 +1587,7 @@ export function BrainwormApp() {
                   </button>
                 </>
               )}
-              {streamingMessageId && canQueueWhileStreaming ? (
-                <div className="composer__actions">
-                  <button
-                    className="composer__send is-stop"
-                    onClick={() => abortRef.current?.abort()}
-                    aria-label="Stop response"
-                  >
-                    <StopIcon />
-                  </button>
-                  <button
-                    className="composer__send is-queue"
-                    onClick={() => void sendMessage()}
-                    disabled={!input.trim()}
-                    title="Add to queue"
-                    aria-label="Add message to queue"
-                  >
-                    <SendIcon />
-                  </button>
-                </div>
-              ) : streamingMessageId ? (
+              {streamingMessageId ? (
                 <button
                   className="composer__send is-stop"
                   onClick={() => abortRef.current?.abort()}
@@ -2113,28 +1797,16 @@ export function BrainwormApp() {
                   )}
 
                   {settingsTab === "tools" && (
-                    <>
-                      <SettingSection
-                        title="Surface scout"
-                        description="Let xAI search the live web and return citation breadcrumbs."
-                      >
-                        <Toggle
-                          checked={state.settings.webSearch}
-                          onChange={(webSearch) => updateSettings({ webSearch })}
-                          label="Use native web search"
-                        />
-                      </SettingSection>
-                      <SettingSection
-                        title="History"
-                        description="When a conversation nears its history budget, summarize older turns instead of letting the message cap silently drop them. Compact manually anytime with the history meter's button or `/compact`."
-                      >
-                        <Toggle
-                          checked={state.settings.autoCompact}
-                          onChange={(autoCompact) => updateSettings({ autoCompact })}
-                          label="Auto-compact history"
-                        />
-                      </SettingSection>
-                    </>
+                    <SettingSection
+                      title="Surface scout"
+                      description="Let xAI search the live web and return citation breadcrumbs."
+                    >
+                      <Toggle
+                        checked={state.settings.webSearch}
+                        onChange={(webSearch) => updateSettings({ webSearch })}
+                        label="Use native web search"
+                      />
+                    </SettingSection>
                   )}
 
                   {settingsTab === "voice" && (

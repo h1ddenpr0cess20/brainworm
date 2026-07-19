@@ -125,14 +125,6 @@ describe("buildExportContent", () => {
       expect(content).toContain("<strong>bold</strong>");
     });
 
-    it("normalizes a scheme-less markdown link instead of leaving a dead href", () => {
-      const convo = makeConversation([
-        makeMessage({ content: "See [the docs](example.com/guide) for more." }),
-      ]);
-      const content = buildExportContent(convo, "html", true, "paper", ISO)!;
-      expect(content).toContain('href="https://example.com/guide"');
-    });
-
     it("syntax-highlights fenced code with the same highlighter as the live chat", () => {
       const convo = makeConversation([makeMessage({ content: "```js\nconst answer = 42;\n```" })]);
       const content = buildExportContent(convo, "html", true, "paper", ISO)!;

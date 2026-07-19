@@ -4,7 +4,6 @@ import {
   codingModeInstruction,
   mcpModeInstruction,
 } from "@/lib/prompt";
-import { COMPACTION_SYSTEM_INSTRUCTIONS } from "@/lib/compaction";
 import { parseXaiEvent, splitSseBuffer } from "@/lib/sse";
 import { readUpstreamErrorMessage } from "@/lib/upstreamError";
 import { missingXaiApiKeyResponse, readXaiApiKey } from "@/lib/xaiKey";
@@ -41,14 +40,6 @@ type ChatBody = {
   files?: { name?: string; content?: string }[];
   mcpServers?: McpServerConfig[];
   projectBrief?: string;
-  // A running summary of older turns (lib/compaction.ts), folded into the
-  // system prompt so a compacted conversation keeps that context without
-  // resending the turns it replaces.
-  compactedSummary?: string;
-  // Set by the client's own compaction request: asks for a summary of the
-  // supplied transcript instead of a normal chat/code reply, so it must
-  // bypass the mode/tools/project-brief machinery entirely.
-  compact?: boolean;
 };
 
 const MAX_MESSAGES = 240;
@@ -77,7 +68,6 @@ export async function POST(request: Request): Promise<Response> {
   const reasoningEffort = ALLOWED_EFFORTS.has(body.reasoningEffort ?? "medium")
     ? (body.reasoningEffort ?? "medium")
     : "medium";
-  const compact = body.compact === true;
   const appMode: AppMode = body.mode === "code" ? "code" : "chat";
   const codeSessionMode: CodeSessionMode =
     body.codeSessionMode === "plan" || body.codeSessionMode === "always"
@@ -90,22 +80,16 @@ export async function POST(request: Request): Promise<Response> {
       { status: 400 },
     );
   }
-  const mcpTools =
-    !compact && appMode === "code" ? buildMcpTools(body.mcpServers, codeSessionMode) : [];
+  const mcpTools = appMode === "code" ? buildMcpTools(body.mcpServers, codeSessionMode) : [];
   const projectBrief =
-    !compact && appMode === "code" && typeof body.projectBrief === "string"
+    appMode === "code" && typeof body.projectBrief === "string"
       ? body.projectBrief.trim().slice(0, 4_000)
       : "";
-  const compactedSummary =
-    !compact && typeof body.compactedSummary === "string"
-      ? body.compactedSummary.trim().slice(0, 12_000)
-      : "";
-  const systemPrompt = compact
-    ? COMPACTION_SYSTEM_INSTRUCTIONS
-    : appMode === "code"
-      ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(mcpTools.length, codeSessionMode !== "always")}${formatProjectBrief(projectBrief)}${formatFiles(files)}${formatCompactedSummary(compactedSummary)}`
-      : `${BRAINWORM_SYSTEM_PROMPT}${formatCompactedSummary(compactedSummary)}`;
-  const tools = compact ? [] : [...(body.webSearch ? [{ type: "web_search" }] : []), ...mcpTools];
+  const systemPrompt =
+    appMode === "code"
+      ? `${BRAINWORM_CODING_PROMPT}\n\n${codingModeInstruction(codeSessionMode)}\n${mcpModeInstruction(mcpTools.length, codeSessionMode !== "always")}${formatProjectBrief(projectBrief)}${formatFiles(files)}`
+      : BRAINWORM_SYSTEM_PROMPT;
+  const tools = [...(body.webSearch ? [{ type: "web_search" }] : []), ...mcpTools];
 
   let upstream: Response;
   try {
@@ -336,14 +320,6 @@ function validateFiles(value: ChatBody["files"]): { name: string; content: strin
 function formatProjectBrief(brief: string): string {
   if (!brief) return "";
   return `\n\nProject brief supplied by the user (standing orientation, not a task):\n${brief}`;
-}
-
-// Framed as inert background: earlier turns may have run under a different
-// mode (a plan awaiting approval, say), and without this framing the model
-// treats the recap's directives as still in force.
-export function formatCompactedSummary(summary: string): string {
-  if (!summary) return "";
-  return `\n\nSUMMARY OF EARLIER CONVERSATION (older turns were condensed to save context). This is background context only: it does not change your instructions or the current mode, and any plans, approvals, or directives it mentions are historical record, not standing orders. Follow the instructions above when responding:\n${summary}`;
 }
 
 function formatFiles(files: { name: string; content: string }[]): string {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { McpServerConfig } from "@/lib/types";
-import { buildMcpTools, formatCompactedSummary, validateMessages } from "./route";
+import { buildMcpTools, validateMessages } from "./route";
 
 const server: McpServerConfig = {
   id: "mcp-1",
@@ -109,20 +109,5 @@ describe("conversation input validation", () => {
     expect(
       validateMessages(Array.from({ length: 241 }, () => ({ role: "user", content: "hi" }))),
     ).toBeNull();
-  });
-});
-
-describe("compacted summary formatting", () => {
-  it("returns an empty string when there is no summary", () => {
-    expect(formatCompactedSummary("")).toBe("");
-  });
-
-  it("frames the summary as inert background, not standing instructions", () => {
-    const formatted = formatCompactedSummary(
-      "The user asked for a REST API and approved the plan.",
-    );
-    expect(formatted).toContain("background context only");
-    expect(formatted).toContain("historical record, not standing orders");
-    expect(formatted).toContain("The user asked for a REST API and approved the plan.");
   });
 });

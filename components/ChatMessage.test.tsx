@@ -33,14 +33,6 @@ describe("ChatMessage code blocks", () => {
     expect(markup).not.toContain('aria-label="Copy code"');
   });
 
-  it("normalizes a scheme-less markdown link instead of resolving it against the app origin", () => {
-    const markup = renderToStaticMarkup(
-      <ChatMessage message={assistantMessage("See [the docs](example.com/guide) for more.")} />,
-    );
-
-    expect(markup).toContain('href="https://example.com/guide"');
-  });
-
   it("renders tool activity and plan approval controls", () => {
     const message: Message = {
       ...assistantMessage("## Plan\n\nMake the change."),

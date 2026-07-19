@@ -13,10 +13,16 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 // (next.config.ts sets output: "standalone" outside Vercel) as a child
 // process on a loopback port and point the window at it, the same way
 // Dockerfile runs `node server.js` in production.
-const APP_ROOT = app.isPackaged
-  ? path.join(process.resourcesPath, "app")
-  : path.join(__dirname, "..");
-const SERVER_PATH = path.join(APP_ROOT, ".next", "standalone", "server.js");
+const STANDALONE_DIR = app.isPackaged
+  ? path.join(process.resourcesPath, "standalone")
+  : path.join(__dirname, "..", ".next", "standalone");
+const SERVER_PATH = path.join(STANDALONE_DIR, "server.js");
+// prepare.cjs always renames the traced standalone node_modules to
+// server_node_modules before any electron script runs (dev or packaged) —
+// electron-builder's extraResources copy filters out directories literally
+// named "node_modules", so this rename must happen unconditionally, and
+// NODE_PATH below points Node at the renamed directory to compensate.
+const SERVER_NODE_MODULES = path.join(STANDALONE_DIR, "server_node_modules");
 
 const PREFERRED_PORT = 47973;
 
@@ -66,6 +72,9 @@ async function startServer() {
   if (!fs.existsSync(SERVER_PATH)) {
     throw new Error(`Standalone server not found at ${SERVER_PATH}. Run "npm run build" first.`);
   }
+  if (!fs.existsSync(SERVER_NODE_MODULES)) {
+    throw new Error(`Standalone dependencies not found at ${SERVER_NODE_MODULES}.`);
+  }
 
   const port = await getPort();
   serverProcess = fork(SERVER_PATH, [], {
@@ -76,10 +85,15 @@ async function startServer() {
       HOSTNAME: "127.0.0.1",
       NODE_ENV: "production",
       NEXT_TELEMETRY_DISABLED: "1",
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_PATH: [SERVER_NODE_MODULES, process.env.NODE_PATH].filter(Boolean).join(path.delimiter),
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
 
+  serverProcess.on("error", (error) => {
+    console.error("Failed to start standalone server:", error);
+  });
   serverProcess.stdout?.on("data", (chunk) => process.stdout.write(chunk));
   serverProcess.stderr?.on("data", (chunk) => process.stderr.write(chunk));
 

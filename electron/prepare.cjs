@@ -8,6 +8,8 @@ const path = require("node:path");
 
 const ROOT = path.join(__dirname, "..");
 const STANDALONE = path.join(ROOT, ".next", "standalone");
+const STANDALONE_NODE_MODULES = path.join(STANDALONE, "node_modules");
+const PACKAGED_NODE_MODULES = path.join(STANDALONE, "server_node_modules");
 
 function copyInto(src, destName) {
   const dest = path.join(STANDALONE, destName);
@@ -24,4 +26,15 @@ if (!fs.existsSync(STANDALONE)) {
 copyInto(path.join(ROOT, ".next", "static"), path.join(".next", "static"));
 copyInto(path.join(ROOT, "public"), "public");
 
-console.log("Copied .next/static and public/ into .next/standalone.");
+if (!fs.existsSync(STANDALONE_NODE_MODULES)) {
+  console.error(`No standalone dependencies at ${STANDALONE_NODE_MODULES}.`);
+  process.exit(1);
+}
+
+// electron-builder's extraResources copy filters out any directory literally
+// named "node_modules", so rename the traced dependency tree here; main.cjs
+// points NODE_PATH at server_node_modules to compensate at runtime.
+fs.rmSync(PACKAGED_NODE_MODULES, { recursive: true, force: true });
+fs.renameSync(STANDALONE_NODE_MODULES, PACKAGED_NODE_MODULES);
+
+console.log("Prepared .next/standalone with static assets and packaged dependencies.");

@@ -2563,7 +2563,11 @@ a:focus-visible {
 }
 
 .toggle-row > span:first-child {
+  min-width: 0;
   flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .toggle-row input {
   position: absolute;
@@ -2656,6 +2660,7 @@ a:focus-visible {
 }
 
 .mcp-editor__header > label {
+  min-width: 0;
   flex: 1;
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "brainworm",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "private": true,
   "description": "A bookish, earth-toned xAI chat companion built with Next.js.",
   "author": "Dustin Whyte",
@@ -55,7 +55,6 @@
   "build": {
     "appId": "com.h1ddenpr0cess20.brainworm",
     "productName": "Brainworm",
-    "asar": false,
     "extraMetadata": {
       "main": "electron/main.cjs"
     },
@@ -66,8 +65,13 @@
       "electron/main.cjs",
       "electron/preload.cjs",
       "electron/icon.png",
-      ".next/standalone/**/*",
       "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": ".next/standalone",
+        "to": "standalone"
+      }
     ],
     "mac": {
       "category": "public.app-category.productivity",

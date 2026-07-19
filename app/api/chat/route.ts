@@ -379,10 +379,24 @@ export function validateMessages(
     const role = entry.role;
     if (role === "user" || role === "assistant") {
       const content = entry.content;
-      if (typeof content !== "string" || !content.trim()) return null;
-      total += content.length;
-      if (role === "user") hasUserText = true;
-      messages.push({ role, content });
+      if (typeof content === "string") {
+        if (!content.trim()) return null;
+        total += content.length;
+        if (role === "user") hasUserText = true;
+        messages.push({ role, content });
+      } else if (Array.isArray(content) && content.length > 0) {
+        // A completed response's own output carries a "message" item shaped
+        // role: "assistant", content: [contentParts] rather than a plain
+        // string. buildConversationInput (components/BrainwormApp.tsx)
+        // replays a message's responseItems verbatim whenever any are
+        // present, so this shape is expected starting on a conversation's
+        // second turn, not a forgery attempt.
+        total += JSON.stringify(content).length;
+        if (role === "user") hasUserText = true;
+        messages.push(entry as IncomingResponseItem);
+      } else {
+        return null;
+      }
     } else {
       if (role !== undefined || typeof entry.type !== "string") return null;
       total += JSON.stringify(entry).length;

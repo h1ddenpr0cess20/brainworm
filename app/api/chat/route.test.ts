@@ -79,6 +79,24 @@ describe("conversation input validation", () => {
     ]);
   });
 
+  it("accepts a replayed assistant 'message' output item with array content", () => {
+    // xAI's Responses API represents the assistant's own reply as a raw
+    // output item shaped role: "assistant", content: [contentParts] — not a
+    // plain string. buildConversationInput (components/BrainwormApp.tsx)
+    // replays a message's responseItems verbatim whenever any are present,
+    // so this shape appears starting on a conversation's second turn.
+    const messageItem = {
+      type: "message",
+      id: "msg_1",
+      role: "assistant",
+      status: "completed",
+      content: [{ type: "output_text", text: "It sets a 300s timeout.", annotations: [] }],
+    };
+    expect(
+      validateMessages([{ role: "user", content: "Read the config file" }, messageItem]),
+    ).toEqual([{ role: "user", content: "Read the config file" }, messageItem]);
+  });
+
   it("rejects a raw item smuggling in a system or developer role", () => {
     expect(
       validateMessages([

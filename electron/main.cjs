@@ -16,7 +16,9 @@ const HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const APP_ROOT = app.isPackaged
   ? path.join(process.resourcesPath, "app")
   : path.join(__dirname, "..");
-const SERVER_PATH = path.join(APP_ROOT, ".next", "standalone", "server.js");
+const STANDALONE_DIR = path.join(APP_ROOT, ".next", "standalone");
+const SERVER_PATH = path.join(STANDALONE_DIR, "server.js");
+const SERVER_NODE_MODULES = path.join(STANDALONE_DIR, "server_node_modules");
 
 const PREFERRED_PORT = 47973;
 
@@ -67,19 +69,30 @@ async function startServer() {
     throw new Error(`Standalone server not found at ${SERVER_PATH}. Run "npm run build" first.`);
   }
 
+  if (app.isPackaged && !fs.existsSync(SERVER_NODE_MODULES)) {
+    throw new Error(`Standalone dependencies not found at ${SERVER_NODE_MODULES}.`);
+  }
+
   const port = await getPort();
   serverProcess = fork(SERVER_PATH, [], {
-    cwd: path.dirname(SERVER_PATH),
+    cwd: STANDALONE_DIR,
     env: {
       ...process.env,
       PORT: String(port),
       HOSTNAME: "127.0.0.1",
       NODE_ENV: "production",
       NEXT_TELEMETRY_DISABLED: "1",
+      ELECTRON_RUN_AS_NODE: "1",
+      NODE_PATH: app.isPackaged
+        ? SERVER_NODE_MODULES
+        : process.env.NODE_PATH || "",
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
 
+  serverProcess.on("error", (error) => {
+    console.error("Failed to start standalone server:", error);
+  });
   serverProcess.stdout?.on("data", (chunk) => process.stdout.write(chunk));
   serverProcess.stderr?.on("data", (chunk) => process.stderr.write(chunk));
 

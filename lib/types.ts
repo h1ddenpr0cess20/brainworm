@@ -33,6 +33,10 @@ export type MessageVariant = {
   content: string;
   sources?: Source[];
   responseItems?: ResponseItem[];
+  // Ride along so switching variants restores this reply's own plan state,
+  // instead of showing approve/revise buttons meant for a different variant.
+  codeMode?: CodeSessionMode;
+  planState?: "proposed" | "approved" | "changes_requested";
 };
 
 /** A raw item from xAI's Responses API `output` array, replayed verbatim on later turns. */

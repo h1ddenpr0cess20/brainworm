@@ -612,6 +612,9 @@ export function BrainwormApp() {
 
     const regenAppMode = target.codeMode ? "code" : state.settings.appMode;
     const regenCodeMode = target.codeMode ?? state.settings.codeSessionMode;
+    const regenCodeModeField = regenAppMode === "code" ? regenCodeMode : undefined;
+    const regenPlanState =
+      regenAppMode === "code" && regenCodeMode === "plan" ? "proposed" : undefined;
 
     patchMessage(conversationId, messageId, {
       content: "",
@@ -642,7 +645,13 @@ export function BrainwormApp() {
                 updatedAt: Date.now(),
                 messages: conversation.messages.map((message) => {
                   if (message.id !== messageId) return message;
-                  return appendMessageVariant(message, { content, sources, responseItems });
+                  return appendMessageVariant(message, {
+                    content,
+                    sources,
+                    responseItems,
+                    codeMode: regenCodeModeField,
+                    planState: regenPlanState,
+                  });
                 }),
               }
             : conversation,
@@ -701,6 +710,8 @@ export function BrainwormApp() {
           content: restored.content,
           sources: restored.sources,
           responseItems: restored.responseItems,
+          codeMode: restored.codeMode,
+          planState: restored.planState,
           status: "complete",
           variants,
           variantIndex: restoreIndex,
@@ -726,6 +737,8 @@ export function BrainwormApp() {
           content: restored.content,
           sources: restored.sources,
           responseItems: restored.responseItems,
+          codeMode: restored.codeMode,
+          planState: restored.planState,
           status: abortController.signal.aborted ? "complete" : "error",
           variants,
           variantIndex: restoreIndex,

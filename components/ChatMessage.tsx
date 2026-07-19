@@ -8,10 +8,11 @@ import {
   type ComponentPropsWithoutRef,
   type ReactNode,
 } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { defaultUrlTransform } from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import remarkGfm from "remark-gfm";
 import type { Message } from "@/lib/types";
+import { normalizeChatHref } from "@/lib/chatLinks";
 import { copyText } from "@/lib/desktop";
 import { describeToolActivity, findResponseItem } from "@/lib/toolDetails";
 import { BrainLogo } from "./BrainLogo";
@@ -76,6 +77,15 @@ function CodeBlock({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
   );
 }
 
+// react-markdown sanitizes every URL before the `a` component renders: a
+// scheme-less destination with a port ("localhost:3000/files/report.pdf")
+// parses as an unknown "localhost:" protocol and is stripped to "", so the
+// anchor silently navigated to the app's own origin. Normalizing before the
+// sanitizer runs gives it a real http(s) URL to approve.
+function chatUrlTransform(url: string) {
+  return defaultUrlTransform(normalizeChatHref(url) ?? "");
+}
+
 export function ChatMessage({
   message,
   tts,
@@ -132,6 +142,7 @@ export function ChatMessage({
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
               rehypePlugins={[rehypeHighlight]}
+              urlTransform={chatUrlTransform}
               components={{
                 a: ({ children, ...props }) => (
                   <a {...props} target="_blank" rel="noreferrer">

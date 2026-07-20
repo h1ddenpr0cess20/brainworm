@@ -391,8 +391,16 @@ export function BrainwormApp() {
   const lastToolCount = activeConversation?.messages.at(-1)?.tools?.length ?? 0;
   useEffect(() => {
     if (!messageCount) return;
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: "smooth" });
-  }, [activeConversation?.id, messageCount, lastContentLength, lastToolCount]);
+    // Deltas and tool updates land many times a second while streaming; a
+    // "smooth" scroll restarted that often never finishes easing before the
+    // next call retargets it, which reads as the feed (and the tool-activity
+    // block in particular) bouncing. Snap instantly while streaming and only
+    // animate for the occasional discrete jump (new conversation, idle send).
+    feedRef.current?.scrollTo({
+      top: feedRef.current.scrollHeight,
+      behavior: streamingMessageId ? "auto" : "smooth",
+    });
+  }, [activeConversation?.id, messageCount, lastContentLength, lastToolCount, streamingMessageId]);
 
   useEffect(() => {
     const textarea = textareaRef.current;

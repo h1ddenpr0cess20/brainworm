@@ -664,7 +664,15 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
+.message__code-toolbar > span {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .message__code-toolbar button {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1045,10 +1053,19 @@ a:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  max-width: 100%;
   color: var(--muted);
   font-family: var(--font-mono);
   font-size: 9px;
   cursor: help;
+}
+
+.message__tool-name {
+  overflow: hidden;
+  min-width: 0;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .message__tool-tip {
@@ -1148,12 +1165,17 @@ a:focus-visible {
 }
 
 .message__attachments span {
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
   padding: 3px 7px;
   border-radius: 6px;
   color: var(--clay);
   background: var(--clay-soft);
   font-family: var(--font-mono);
   font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .generated-gallery {

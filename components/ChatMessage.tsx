@@ -190,8 +190,10 @@ export function ChatMessage({
                     tabIndex={item ? 0 : undefined}
                   >
                     <i />
-                    {tool.server ? `${tool.server} · ` : ""}
-                    {tool.name}
+                    <span className="message__tool-name">
+                      {tool.server ? `${tool.server} · ` : ""}
+                      {tool.name}
+                    </span>
                     {item && (
                       <span className="message__tool-tip" role="tooltip">
                         {describeToolActivity(tool, item)}

@@ -333,19 +333,26 @@ export function BrainwormApp() {
     const apiKey = xaiApiKey.trim();
     if (!apiKey) return;
     const controller = new AbortController();
-    void fetch("/api/tts/voices", {
-      cache: "no-store",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      signal: controller.signal,
-    })
-      .then((response) =>
-        response.ok ? (response.json() as Promise<{ voices: TtsVoice[] }>) : null,
-      )
-      .then((payload) => {
-        if (payload?.voices.length) setTtsVoices(payload.voices);
+    // xaiApiKey updates on every keystroke while the field is being edited;
+    // debounce so a key isn't sent to xAI one partial character at a time.
+    const timer = window.setTimeout(() => {
+      void fetch("/api/tts/voices", {
+        cache: "no-store",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: controller.signal,
       })
-      .catch(() => undefined);
-    return () => controller.abort();
+        .then((response) =>
+          response.ok ? (response.json() as Promise<{ voices: TtsVoice[] }>) : null,
+        )
+        .then((payload) => {
+          if (payload?.voices.length) setTtsVoices(payload.voices);
+        })
+        .catch(() => undefined);
+    }, 600);
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
   }, [xaiApiKey]);
 
   // Persisting serializes every conversation, so writing on each streamed

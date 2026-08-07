@@ -223,6 +223,9 @@ async function getOrCreateAudio(
   try {
     return await request;
   } finally {
+    // Identity comparison against the stored promise, not a value read: only
+    // clear the entry if a newer request has not already replaced it.
+    // codeql[js/missing-await]
     if (pendingAudio.get(key) === request) pendingAudio.delete(key);
   }
 }

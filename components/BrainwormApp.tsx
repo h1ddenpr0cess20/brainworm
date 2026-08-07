@@ -757,7 +757,7 @@ export function BrainwormApp() {
         return;
       }
       finishVariant(accumulated, finalSources, finalItems);
-      if (accumulated && isTtsActive(state.settings) && state.settings.ttsAutoplay) {
+      if (isTtsActive(state.settings) && state.settings.ttsAutoplay) {
         void autoplayTtsMessage({
           messageId,
           text: accumulated,

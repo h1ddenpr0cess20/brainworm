@@ -38,6 +38,10 @@ export function saveXaiApiKey(apiKey: string): void {
   if (typeof window === "undefined") return;
   try {
     if (apiKey) {
+      // Brainworm is backend-free: the user's own xAI key has to live in this
+      // browser for requests to work at all, and there is no server-held secret
+      // to encrypt it with. Storing it locally is the documented design.
+      // codeql[js/clear-text-storage-of-sensitive-data]
       window.localStorage.setItem(XAI_API_KEY_STORAGE_KEY, apiKey);
     } else {
       window.localStorage.removeItem(XAI_API_KEY_STORAGE_KEY);

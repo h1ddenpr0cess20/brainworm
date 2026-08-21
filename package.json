@@ -31,7 +31,7 @@
     "electron:dist:release": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64 --publish never && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
-    "next": "^16.2.10",
+    "next": "^16.3.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

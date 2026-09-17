@@ -31,17 +31,17 @@
     "electron:dist:release": "npm run build && npm run electron:prepare && electron-builder --linux AppImage --x64 --publish never && electron-builder --win nsis --x64 --publish never"
   },
   "dependencies": {
-    "next": "^16.3.4",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
+    "next": "^16.3.5",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
     "react-markdown": "^10.1.0",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
     "@vitest/coverage-v8": "4.1.10",
     "electron": "^43.3.0",
     "electron-builder": "^26.15.3",

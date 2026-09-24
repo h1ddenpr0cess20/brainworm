@@ -39,18 +39,18 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
-    "@types/node": "^26.2.0",
+    "@types/node": "^26.6.2",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
-    "@vitest/coverage-v8": "4.1.10",
-    "electron": "^43.3.0",
+    "@vitest/coverage-v8": "5.0.1",
+    "electron": "^44.4.3",
     "electron-builder": "^26.15.3",
-    "eslint": "9.39.5",
-    "eslint-config-next": "16.3.0",
+    "eslint": "10.11.0",
+    "eslint-config-next": "16.3.5",
     "eslint-config-prettier": "10.1.8",
-    "prettier": "3.9.6",
-    "typescript": "^6.0.3",
-    "vitest": "^4.1.10"
+    "prettier": "3.9.8",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
   },
   "build": {
     "appId": "com.h1ddenpr0cess20.brainworm",
